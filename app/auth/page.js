@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase'; // Ensure this path matches your lib folder
+import { supabase } from '@/lib/supabase'; // daad ang path, match sa lib folder
 import { useRouter } from 'next/navigation';
 
 export default function AuthPage() {
@@ -115,7 +115,7 @@ export default function AuthPage() {
         </form>
         
         <p className="mt-6 text-center text-gray-500 text-xs">
-          System Integration & Architecture - Lab 3 [cite: 3]
+          Developed by: Lance Ian E. Moquerio [cite: 3]
         </p>
       </div>
     </div>

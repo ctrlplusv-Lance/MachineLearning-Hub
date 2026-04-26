@@ -115,7 +115,7 @@ export default function AuthPage() {
         </form>
         
         <p className="mt-6 text-center text-gray-500 text-xs">
-          Developed by: Lance Ian E. Moquerio [cite: 3]
+          Developed by: Lance Ian E. Moquerio
         </p>
       </div>
     </div>

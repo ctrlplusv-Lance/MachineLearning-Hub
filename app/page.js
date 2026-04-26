@@ -5,13 +5,14 @@ export default function LandingPage() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
       {/* Requirement: Application Title */}
       <h1 className="text-5xl font-extrabold text-blue-900 mb-4">
-        Machine Learning Hub
+        Machine Learning Hub.
       </h1>
       
       {/* Requirement: Short Description */}
       <p className="text-lg text-slate-600 mb-8 max-w-lg">
-        A simple integrated platform for exploring machine learning concepts. 
-        Built with Next.js, secured by Supabase, and deployed on Vercel.
+        {/* A simple integrated platform for exploring machine learning concepts. 
+        Built with Next.js, secured by Supabase, and deployed on Vercel. */}
+        This is for testing only. Please proceed to the authentication page to access the dashboard and explore machine learning concepts.
       </p>
       
       {/* Requirement: Button directing to Login/Sign-Up */}

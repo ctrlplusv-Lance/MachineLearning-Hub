@@ -167,112 +167,112 @@ export default function Dashboard() {
                     <button onClick={() => handleShare(article.title, article.id)} className="text-slate-400 hover:text-purple-600 text-xs font-bold transition">🔗 Share</button>
                   </div>
                   {openComments === article.id && (
-                    <div className="w-full mt-4">
+  <div className="w-full mt-4">
 
-                      {/* COMMENT INPUT */}
-                      <form
-                        onSubmit={async (e) => {
-                          e.preventDefault();
-                          const content = e.target.comment.value;
-                          if (!content) return;
+    {/* COMMENT INPUT */}
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const content = e.target.comment.value;
+        if (!content) return;
 
-                          await supabase.from('comments').insert([
-                            {
-                              article_id: article.id,
-                              user_id: user.id,
-                              content,
-                              parent_id: null,
-                            },
-                          ]);
+        await supabase.from('comments').insert([
+          {
+            article_id: article.id,
+            user_id: user.id,
+            content,
+            parent_id: null,
+          },
+        ]);
 
-                          e.target.reset();
-                          loadData();
-                        }}
-                        className="flex gap-2"
+        e.target.reset();
+        loadData();
+      }}
+      className="flex gap-2"
+    >
+      <input
+        name="comment"
+        placeholder="Write a comment..."
+        className="flex-1 border rounded-full px-3 py-1 text-xs"
+      />
+      <button className="text-xs bg-green-500 text-white px-3 rounded-full">
+        Post
+      </button>
+    </form>
+
+    {/* THREADING LOGIC */}
+    {(() => {
+      const mainComments = (article.comments || []).filter(
+        (c) => !c.parent_id
+      );
+
+      return (
+        <div className="mt-3 space-y-3">
+          {mainComments.map((comment) => {
+            const displayName =
+              comment.profiles?.username?.split('@')[0] || 'anonymous';
+
+            const replies = (article.comments || []).filter(
+              (c) => c.parent_id === comment.id
+            );
+
+            return (
+              <div key={comment.id} className="bg-slate-100 p-3 rounded-lg">
+
+                {/* MAIN COMMENT */}
+                <p className="font-bold text-slate-700 text-xs">
+                  @{displayName}
+                </p>
+                <p className="text-slate-600 text-xs">{comment.content}</p>
+
+                {/* REPLY BUTTON */}
+                <button
+                  onClick={async () => {
+                    const reply = prompt("Write a reply:");
+                    if (!reply) return;
+
+                    await supabase.from('comments').insert([
+                      {
+                        article_id: article.id,
+                        user_id: user.id,
+                        content: reply,
+                        parent_id: comment.id,
+                      },
+                    ]);
+
+                    loadData();
+                  }}
+                  className="text-[10px] text-blue-500 mt-1"
+                >
+                  Reply
+                </button>
+
+                {/* NESTED REPLIES */}
+                <div className="ml-6 mt-2 space-y-2">
+                  {replies.map((reply) => {
+                    const replyName =
+                      reply.profiles?.username?.split('@')[0] || 'anonymous';
+
+                    return (
+                      <div
+                        key={reply.id}
+                        className="bg-white p-2 rounded shadow-sm"
                       >
-                        <input
-                          name="comment"
-                          placeholder="Write a comment..."
-                          className="flex-1 border rounded-full px-3 py-1 text-xs"
-                        />
-                        <button className="text-xs bg-green-500 text-white px-3 rounded-full">
-                          Post
-                        </button>
-                      </form>
+                        <p className="font-bold text-xs">@{replyName}</p>
+                        <p className="text-xs">{reply.content}</p>
+                      </div>
+                    );
+                  })}
+                </div>
 
-                      {/* THREADING LOGIC */}
-                      {(() => {
-                        const mainComments = (article.comments || []).filter(
-                          (c) => !c.parent_id
-                        );
-
-                        return (
-                          <div className="mt-3 space-y-3">
-                            {mainComments.map((comment) => {
-                              const displayName =
-                                comment.profiles?.username?.split('@')[0] || 'anonymous';
-
-                              const replies = (article.comments || []).filter(
-                                (c) => c.parent_id === comment.id
-                              );
-
-                              return (
-                                <div key={comment.id} className="bg-slate-100 p-3 rounded-lg">
-
-                                  {/* MAIN COMMENT */}
-                                  <p className="font-bold text-slate-700 text-xs">
-                                    @{displayName}
-                                  </p>
-                                  <p className="text-slate-600 text-xs">{comment.content}</p>
-
-                                  {/* REPLY BUTTON */}
-                                  <button
-                                    onClick={async () => {
-                                      const reply = prompt("Write a reply:");
-                                      if (!reply) return;
-
-                                      await supabase.from('comments').insert([
-                                        {
-                                          article_id: article.id,
-                                          user_id: user.id,
-                                          content: reply,
-                                          parent_id: comment.id,
-                                        },
-                                      ]);
-
-                                      loadData();
-                                    }}
-                                    className="text-[10px] text-blue-500 mt-1"
-                                  >
-                                    Reply
-                                  </button>
-
-                                  {/* NESTED REPLIES */}
-                                  <div className="ml-6 mt-2 space-y-2">
-                                    {replies.map((reply) => {
-                                      const replyName =
-                                        reply.profiles?.username?.split('@')[0] || 'anonymous';
-
-                                      return (
-                                        <div
-                                          key={reply.id}
-                                          className="bg-white p-2 rounded shadow-sm"
-                                        >
-                                          <p className="font-bold text-xs">@{replyName}</p>
-                                          <p className="text-xs">{reply.content}</p>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    })()}
+  </div>
+)}
                 </div>
               </article>
             );

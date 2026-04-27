@@ -10,9 +10,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  // Function to load all data - called on mount and when database changes
+  // Function to load all data - called on mount AND when database changes
   const loadData = async () => {
-    // 1. Fetch Main Articles Feed with profile info
+    // 1. Fetch Main Articles Feed
     const { data: articleData } = await supabase
       .from('articles')
       .select(`
@@ -22,7 +22,7 @@ export default function Dashboard() {
       .order('created_at', { ascending: false });
     setArticles(articleData || []);
 
-    // 2. Fetch Top 5 Articles (Trending) from your View
+    // 2. Fetch Top 5 Articles (Trending)
     const { data: topData } = await supabase
       .from('top_articles')
       .select('*');
@@ -31,7 +31,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     const setup = async () => {
-      // Check Auth Session
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) {
         router.push('/auth');
@@ -45,7 +44,6 @@ export default function Dashboard() {
     setup();
 
     // --- REALTIME SUBSCRIPTION ---
-    // Listens for changes in likes/articles and refreshes the feed automatically
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', 
@@ -66,7 +64,6 @@ export default function Dashboard() {
   const handleLike = async (articleId) => {
     if (!user) return;
 
-    // Toggle Like logic
     const { error } = await supabase
       .from('likes')
       .insert([{ 
@@ -75,7 +72,7 @@ export default function Dashboard() {
       }]);
 
     if (error) {
-      if (error.code === '23505') { // Unique violation = already liked
+      if (error.code === '23505') { // Already liked, so "Unlike"
         await supabase
           .from('likes')
           .delete()
@@ -92,14 +89,20 @@ export default function Dashboard() {
   };
 
   const handleShare = async (title, id) => {
-    // IMPORTANT: Pointing to /articles/ for the public view
+    // This dynamically gets your Vercel URL or Localhost URL
+    // And points to the /articles/[id] folder we created
     const shareUrl = `${window.location.origin}/articles/${id}`;
     
     if (navigator.share) {
-      try { await navigator.share({ title, url: shareUrl }); } catch (err) {}
+      try { 
+        await navigator.share({ title, url: shareUrl }); 
+      } catch (err) {
+        console.log("Share dismissed");
+      }
     } else {
+      // Fallback if browser doesn't support native share
       navigator.clipboard.writeText(shareUrl);
-      alert("Public link copied!");
+      alert("Public link copied to clipboard!");
     }
   };
 
@@ -111,7 +114,6 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
-      {/* NAVIGATION */}
       <nav className="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-blue-600 rounded-lg"></div>
@@ -130,7 +132,6 @@ export default function Dashboard() {
       </nav>
 
       <main className="max-w-6xl mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* FEED */}
         <section className="lg:col-span-2 space-y-6">
           <h2 className="text-2xl font-extrabold text-slate-800">Latest Discoveries</h2>
           {articles.map((article) => {
@@ -158,7 +159,12 @@ export default function Dashboard() {
                       👍 Like
                     </button>
                     <button className="text-slate-400 hover:text-green-600 text-xs font-bold transition">💬 Comment</button>
-                    <button onClick={() => handleShare(article.title, article.id)} className="text-slate-400 hover:text-purple-600 text-xs font-bold transition">🔗 Share</button>
+                    <button 
+                      onClick={() => handleShare(article.title, article.id)} 
+                      className="text-slate-400 hover:text-purple-600 text-xs font-bold transition"
+                    >
+                      🔗 Share
+                    </button>
                   </div>
                 </div>
               </article>
@@ -166,7 +172,6 @@ export default function Dashboard() {
           })}
         </section>
 
-        {/* TRENDING SIDEBAR */}
         <aside className="space-y-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 sticky top-24">
             <h2 className="text-lg font-bold mb-6 flex items-center gap-2">🔥 Trending Now</h2>

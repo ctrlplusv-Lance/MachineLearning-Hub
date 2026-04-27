@@ -2,31 +2,38 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+// Fixed import path based on your folder structure
+import CommentModal from '../components/CommentModal'; 
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [articles, setArticles] = useState([]);
   const [topArticles, setTopArticles] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [activeArticle, setActiveArticle] = useState(null); // New state for the modal
   const router = useRouter();
 
-  // Function to load all data - called on mount AND when database changes
   const loadData = async () => {
-    // 1. Fetch Main Articles Feed
+    // 1. Articles
     const { data: articleData } = await supabase
       .from('articles')
-      .select(`
-        *,
-        profiles (username)
-      `)
+      .select(`*, profiles (username)`)
       .order('created_at', { ascending: false });
     setArticles(articleData || []);
 
-    // 2. Fetch Top 5 Articles (Trending)
-    const { data: topData } = await supabase
-      .from('top_articles')
-      .select('*');
+    // 2. Trending
+    const { data: topData } = await supabase.from('top_articles').select('*');
     setTopArticles(topData || []);
+
+    // 3. Notifications (Load the last 10)
+    const { data: notifData } = await supabase
+      .from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    setNotifications(notifData || []);
   };
 
   useEffect(() => {
@@ -43,66 +50,28 @@ export default function Dashboard() {
 
     setup();
 
-    // --- REALTIME SUBSCRIPTION ---
     const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'likes' }, 
-        () => loadData()
-      )
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'articles' }, 
-        () => loadData()
-      )
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, () => loadData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'articles' }, () => loadData())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+        setNotifications(prev => [payload.new, ...prev]);
+      })
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [router]);
-
-  const handleLike = async (articleId) => {
-    if (!user) return;
-
-    const { error } = await supabase
-      .from('likes')
-      .insert([{ 
-        user_id: user.id, 
-        article_id: articleId 
-      }]);
-
-    if (error) {
-      if (error.code === '23505') { // Already liked, so "Unlike"
-        await supabase
-          .from('likes')
-          .delete()
-          .match({ user_id: user.id, article_id: articleId });
-      } else {
-        console.error("Error toggling like:", error.message);
-      }
-    }
-  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/');
   };
 
-  const handleShare = async (title, id) => {
-    // This dynamically gets your Vercel URL or Localhost URL
-    // And points to the /articles/[id] folder we created
-    const shareUrl = `${window.location.origin}/articles/${id}`;
-    
-    if (navigator.share) {
-      try { 
-        await navigator.share({ title, url: shareUrl }); 
-      } catch (err) {
-        console.log("Share dismissed");
-      }
-    } else {
-      // Fallback if browser doesn't support native share
-      navigator.clipboard.writeText(shareUrl);
-      alert("Public link copied to clipboard!");
+  const handleLike = async (articleId) => {
+    if (!user) return;
+    const { error } = await supabase.from('likes').insert([{ user_id: user.id, article_id: articleId }]);
+    if (error && error.code === '23505') {
+      await supabase.from('likes').delete().match({ user_id: user.id, article_id: articleId });
     }
   };
 
@@ -117,14 +86,46 @@ export default function Dashboard() {
       <nav className="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-blue-600 rounded-lg"></div>
-          <h1 className="text-xl font-bold text-blue-900">ML Hub</h1>
+          <h1 className="text-xl font-bold text-blue-900">Article Hub</h1>
         </div>
+        
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-500 hidden sm:inline">{user?.email}</span>
-          <button 
-            onClick={() => router.push('/dashboard/new')} 
-            className="bg-blue-600 text-white px-5 py-2 rounded-full hover:bg-blue-700 text-sm font-semibold transition-all shadow-md active:scale-95"
-          >
+          <span className="text-sm text-slate-500 hidden md:inline font-medium">
+            {user?.email?.split('@')[0]}
+          </span>
+
+          <div className="relative">
+            <button onClick={() => setShowNotifs(!showNotifs)} className="relative p-2 text-slate-500 hover:text-blue-600 transition">
+              <span className="text-xl">🔔</span>
+              {notifications.length > 0 && (
+                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full"></span>
+              )}
+            </button>
+            
+            {showNotifs && (
+              <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 shadow-xl rounded-xl z-[60] overflow-hidden animate-in fade-in zoom-in duration-150">
+                <div className="p-3 border-b font-bold text-slate-800 bg-slate-50">Notifications</div>
+                <div className="max-h-64 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <p className="p-8 text-center text-slate-400 text-sm italic">No new notifications.</p>
+                  ) : (
+                    notifications.map(n => (
+                      <div 
+                        key={n.id} 
+                        onClick={() => { router.push(`/articles/${n.article_id}`); setShowNotifs(false); }} 
+                        className="p-4 border-b border-slate-50 cursor-pointer hover:bg-blue-50 transition text-sm text-slate-700"
+                      >
+                        {n.message}
+                        <span className="block text-[10px] text-slate-400 mt-1">Just now</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button onClick={() => router.push('/dashboard/new')} className="bg-blue-600 text-white px-5 py-2 rounded-full hover:bg-blue-700 text-sm font-semibold shadow-md active:scale-95 transition-all">
             + New Post
           </button>
           <button onClick={handleLogout} className="text-gray-400 hover:text-red-500 text-sm font-medium transition">Logout</button>
@@ -135,36 +136,32 @@ export default function Dashboard() {
         <section className="lg:col-span-2 space-y-6">
           <h2 className="text-2xl font-extrabold text-slate-800">Latest Discoveries</h2>
           {articles.map((article) => {
-            const rawName = article.profiles?.username || 'anonymous';
-            const displayName = rawName.includes('@') ? rawName.split('@')[0] : rawName;
-
+            const displayName = (article.profiles?.username || 'anonymous').split('@')[0];
             return (
               <article key={article.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-300 transition-all group">
                 <h3 className="text-xl font-bold text-slate-900 group-hover:text-blue-700">{article.title}</h3>
                 <p className="text-slate-600 mt-3 line-clamp-3">{article.content}</p>
-                
                 <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-indigo-400 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                      {displayName.charAt(0).toUpperCase()}
+                    <div className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-indigo-400 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm uppercase">
+                      {displayName.charAt(0)}
                     </div>
                     <span className="text-slate-700 text-sm font-bold">@{displayName}</span>
                   </div>
-                  
                   <div className="flex gap-4">
+                    <button onClick={() => handleLike(article.id)} className="text-slate-400 hover:text-blue-600 text-xs font-bold transition flex items-center gap-1">👍 Like</button>
+                    {/* Fixed Comment Button to open modal */}
                     <button 
-                      onClick={() => handleLike(article.id)}
-                      className="text-slate-400 hover:text-blue-600 text-xs font-bold transition flex items-center gap-1"
+                      onClick={() => setActiveArticle(article)} 
+                      className="text-slate-400 hover:text-green-600 text-xs font-bold transition"
                     >
-                      👍 Like
+                      💬 Comment
                     </button>
-                    <button className="text-slate-400 hover:text-green-600 text-xs font-bold transition">💬 Comment</button>
-                    <button 
-                      onClick={() => handleShare(article.title, article.id)} 
-                      className="text-slate-400 hover:text-purple-600 text-xs font-bold transition"
-                    >
-                      🔗 Share
-                    </button>
+                    <button onClick={() => {
+                        const url = `${window.location.origin}/articles/${article.id}`;
+                        navigator.clipboard.writeText(url);
+                        alert("Link copied!");
+                    }} className="text-slate-400 hover:text-purple-600 text-xs font-bold transition">🔗 Share</button>
                   </div>
                 </div>
               </article>
@@ -189,6 +186,15 @@ export default function Dashboard() {
           </div>
         </aside>
       </main>
+
+      {/* Logic to show the Modal popup */}
+      {activeArticle && (
+        <CommentModal 
+          article={activeArticle} 
+          user={user} 
+          onClose={() => setActiveArticle(null)} 
+        />
+      )}
     </div>
   );
 }

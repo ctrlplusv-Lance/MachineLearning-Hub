@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 
+// This makes the links look good when shared on Messenger/Social Media
 export async function generateMetadata({ params }) {
   const { data: article } = await supabase
     .from('articles')
@@ -17,12 +18,18 @@ export async function generateMetadata({ params }) {
 export default async function PublicArticlePage({ params }) {
   const { id } = params;
 
-  // Fetch article data for anyone with the link
+  // 1. Fetch article data PLUS the comments and profiles in one go
   const { data: article, error } = await supabase
     .from('articles')
     .select(`
       *,
-      profiles (username)
+      profiles (username),
+      comments (
+        id,
+        content,
+        created_at,
+        profiles (username)
+      )
     `)
     .eq('id', id)
     .single();
@@ -46,6 +53,9 @@ export default async function PublicArticlePage({ params }) {
       <article className="max-w-3xl mx-auto bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-8 md:p-12">
           <header className="mb-8">
+            <Link href="/" className="text-blue-600 text-sm font-bold mb-6 inline-block hover:underline">
+              ← Back to Hub
+            </Link>
             <h1 className="text-4xl font-extrabold text-slate-900 mb-6 leading-tight">
               {article.title}
             </h1>
@@ -67,10 +77,35 @@ export default async function PublicArticlePage({ params }) {
             {article.content}
           </div>
 
-          <footer className="mt-12 pt-8 border-t border-slate-100">
+          {/* --- NEW: COMMENT SECTION VIEW --- */}
+          <section className="mt-12 pt-8 border-t border-slate-100">
+            <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+              💬 Discussion ({article.comments?.length || 0})
+            </h3>
+            
+            <div className="space-y-4 mb-8">
+              {article.comments && article.comments.length > 0 ? (
+                article.comments.map((comment) => (
+                  <div key={comment.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-bold text-blue-700">
+                        @{(comment.profiles?.username || 'anonymous').split('@')[0]}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {new Date(comment.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-slate-700 text-sm leading-relaxed">{comment.content}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-slate-400 text-center py-4 text-sm italic">No comments yet. Be the first to join the conversation!</p>
+              )}
+            </div>
+
             <div className="bg-blue-50 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
               <p className="text-blue-900 font-semibold text-center sm:text-left">
-                Enjoyed this discovery? Join ML Hub to join the discussion.
+                Want to reply or post a comment?
               </p>
               <Link 
                 href="/auth" 
@@ -79,7 +114,7 @@ export default async function PublicArticlePage({ params }) {
                 Sign Up Free
               </Link>
             </div>
-          </footer>
+          </section>
         </div>
       </article>
     </div>

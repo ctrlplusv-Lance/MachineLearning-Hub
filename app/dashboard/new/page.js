@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 export default function NewArticle() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [imageFile, setImageFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -25,27 +26,52 @@ export default function NewArticle() {
         return;
       }
 
-      // 2. Insert into the database 
-      // Ensuring author_id matches your specific table schema seen in Supabase
+      let publicUrl = null;
+
+      // 2. Handle Image Upload if a file exists
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('article-images')
+          .upload(filePath, imageFile);
+
+        if (uploadError) {
+          throw new Error("Image upload failed: " + uploadError.message);
+        }
+
+        // Get the Public URL for the database record
+        const { data: urlData } = supabase.storage
+          .from('article-images')
+          .getPublicUrl(filePath);
+        
+        publicUrl = urlData.publicUrl;
+      }
+
+      // 3. Insert into the database 
+      // FIXED: Using 'author_id' to match your database constraint
       const { error } = await supabase
         .from('articles')
         .insert([{ 
           title: title.trim(), 
           content: content.trim(), 
-          author_id: user.id 
+          author_id: user.id, // Corrected from user_id
+          image_url: publicUrl 
         }]);
 
       if (error) {
+        // If you still see an RLS error here, run the SQL INSERT policy provided earlier
         console.error("Publishing error:", error.message);
         alert("Error publishing: " + error.message);
       } else {
-        // 3. Success! 
         router.push('/dashboard');
         router.refresh(); 
       }
     } catch (err) {
       console.error("Unexpected error:", err);
-      alert("An unexpected error occurred.");
+      alert(err.message || "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }
@@ -78,10 +104,21 @@ export default function NewArticle() {
           </div>
 
           <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Cover Image (Optional)</label>
+            <input 
+              type="file"
+              accept="image/*"
+              onChange={(e) => setImageFile(e.target.files[0])}
+              className="w-full p-2 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              disabled={loading}
+            />
+          </div>
+
+          <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">Content</label>
             <textarea 
               className="w-full p-3 border border-slate-200 rounded-xl h-64 focus:ring-2 focus:ring-blue-500 outline-none transition resize-none bg-slate-50 focus:bg-white text-slate-900 placeholder:text-slate-400"
-              placeholder="Deep dive into your machine learning topic..."
+              placeholder="Deep dive into your topic..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
               required
@@ -96,15 +133,7 @@ export default function NewArticle() {
               loading ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.98]'
             }`}
           >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Publishing...
-              </span>
-            ) : "Publish Article"}
+            {loading ? "Publishing..." : "Publish Article"}
           </button>
         </form>
       </div>

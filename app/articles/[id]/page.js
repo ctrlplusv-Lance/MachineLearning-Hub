@@ -18,7 +18,7 @@ export async function generateMetadata({ params }) {
 export default async function PublicArticlePage({ params }) {
   const { id } = params;
 
-  // 1. Fetch article data PLUS the comments and profiles in one go
+  // 1. Fetch article data PLUS profiles, comments, and images
   const { data: article, error } = await supabase
     .from('articles')
     .select(`
@@ -60,7 +60,7 @@ export default async function PublicArticlePage({ params }) {
               {article.title}
             </h1>
             
-            <div className="flex items-center gap-3 py-4 border-y border-slate-100">
+            <div className="flex items-center gap-3 py-4 border-y border-slate-100 mb-8">
               <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
                 {displayName.charAt(0).toUpperCase()}
               </div>
@@ -73,11 +73,22 @@ export default async function PublicArticlePage({ params }) {
             </div>
           </header>
 
-          <div className="prose prose-slate max-w-none text-slate-700 leading-relaxed text-lg whitespace-pre-wrap">
+          {/* FIXED: Added the Article Image Block */}
+          {article.image_url && (
+            <div className="mb-10 overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
+              <img 
+                src={article.image_url} 
+                alt={article.title} 
+                className="w-full h-auto object-cover max-h-[500px]"
+              />
+            </div>
+          )}
+
+          <div className="prose prose-slate max-w-none text-slate-700 leading-relaxed text-lg whitespace-pre-wrap mb-12">
             {article.content}
           </div>
 
-          {/* --- NEW: COMMENT SECTION VIEW --- */}
+          {/* --- COMMENT SECTION VIEW --- */}
           <section className="mt-12 pt-8 border-t border-slate-100">
             <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
               💬 Discussion ({article.comments?.length || 0})

@@ -62,9 +62,20 @@ export default function ArticleView() {
           </div>
 
           {/* High contrast Title */}
-          <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-8 leading-tight">
+          <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-6 leading-tight">
             {article?.title}
           </h1>
+
+          {/* FIXED: Added Image Display Block */}
+          {article?.image_url && (
+            <div className="mb-10 overflow-hidden rounded-3xl border border-slate-100 shadow-lg">
+              <img 
+                src={article.image_url} 
+                alt={article.title} 
+                className="w-full h-auto max-h-[500px] object-cover"
+              />
+            </div>
+          )}
 
           {/* Darker content text to prevent the "invisible" look */}
           <div className="prose prose-slate max-w-none">

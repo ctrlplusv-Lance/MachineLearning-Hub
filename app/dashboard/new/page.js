@@ -17,7 +17,7 @@ export default function NewArticle() {
     setLoading(true);
     
     try {
-      // 1. Get current user
+      // 1. Authenticate the user
       const { data: { user }, error: authError } = await supabase.auth.getUser();
 
       if (authError || !user) {
@@ -28,50 +28,60 @@ export default function NewArticle() {
 
       let publicUrl = null;
 
-      // 2. Handle Image Upload if a file exists
+      // 2. Handle Image Upload to Storage
       if (imageFile) {
         const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${user.id}-${Math.random()}.${fileExt}`;
-        const filePath = `${fileName}`;
-
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        
         const { error: uploadError } = await supabase.storage
           .from('article-images')
-          .upload(filePath, imageFile);
+          .upload(fileName, imageFile);
 
-        if (uploadError) {
-          throw new Error("Image upload failed: " + uploadError.message);
-        }
+        if (uploadError) throw new Error("Image upload failed: " + uploadError.message);
 
-        // Get the Public URL for the database record
         const { data: urlData } = supabase.storage
           .from('article-images')
-          .getPublicUrl(filePath);
+          .getPublicUrl(fileName);
         
         publicUrl = urlData.publicUrl;
       }
 
-      // 3. Insert into the database 
-      // FIXED: Using 'author_id' to match your database constraint
-      const { error } = await supabase
+      // 3. Insert Article into 'articles' table
+      // Matches the 'author_id' column in your schema
+      const { data: newArticle, error: articleError } = await supabase
         .from('articles')
         .insert([{ 
           title: title.trim(), 
           content: content.trim(), 
-          author_id: user.id, // Corrected from user_id
+          author_id: user.id, 
           image_url: publicUrl 
-        }]);
+        }])
+        .select()
+        .single();
 
-      if (error) {
-        // If you still see an RLS error here, run the SQL INSERT policy provided earlier
-        console.error("Publishing error:", error.message);
-        alert("Error publishing: " + error.message);
-      } else {
-        router.push('/dashboard');
-        router.refresh(); 
-      }
+      if (articleError) throw articleError;
+
+      // 4. Trigger Global Notification
+      // FIXED: Strictly removed 'message' to match your schema
+      const myUsername = user.email ? user.email.split('@')[0] : 'User';
+      
+      const { error: notifError } = await supabase.from('notifications').insert({
+        user_id: null, 
+        actor_usernames: [myUsername], // Schema expects text array
+        article_id: newArticle.id,
+        type: 'new_article'
+      });
+
+      if (notifError) {
+  console.error("Notification Sync Error:", notifError);
+}
+
+      router.push('/dashboard');
+      router.refresh(); 
+
     } catch (err) {
-      console.error("Unexpected error:", err);
-      alert(err.message || "An unexpected error occurred.");
+      console.error("Publishing Error:", err.message);
+      alert("Error: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -79,23 +89,23 @@ export default function NewArticle() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-10">
-      <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+      <div className="max-w-2xl mx-auto bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
         <div className="flex items-center gap-4 mb-8">
           <button 
             onClick={() => router.back()} 
-            className="text-slate-400 hover:text-slate-600 transition p-2 hover:bg-slate-50 rounded-full"
+            className="text-slate-400 hover:text-blue-600 transition p-2 hover:bg-blue-50 rounded-full font-black text-xs uppercase"
           >
             ← Back
           </button>
-          <h1 className="text-2xl font-bold text-slate-800">Create New Article</h1>
+          <h1 className="text-2xl font-black text-slate-800 tracking-tight">New Discovery</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Title</label>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Article Title</label>
             <input 
-              className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition bg-slate-50 focus:bg-white text-slate-900 placeholder:text-slate-400"
-              placeholder="e.g., Understanding Neural Networks"
+              className="w-full p-4 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition bg-slate-50 font-bold text-slate-900"
+              placeholder="Give it a catchy name..."
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
@@ -104,21 +114,21 @@ export default function NewArticle() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Cover Image (Optional)</label>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Cover Image</label>
             <input 
               type="file"
               accept="image/*"
               onChange={(e) => setImageFile(e.target.files[0])}
-              className="w-full p-2 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              className="w-full p-2 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 cursor-pointer"
               disabled={loading}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Content</label>
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Content</label>
             <textarea 
-              className="w-full p-3 border border-slate-200 rounded-xl h-64 focus:ring-2 focus:ring-blue-500 outline-none transition resize-none bg-slate-50 focus:bg-white text-slate-900 placeholder:text-slate-400"
-              placeholder="Deep dive into your topic..."
+              className="w-full p-4 border border-slate-100 rounded-3xl h-64 focus:ring-2 focus:ring-blue-500 outline-none transition resize-none bg-slate-50 font-medium leading-relaxed text-slate-800"
+              placeholder="What did you discover today?"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               required
@@ -129,11 +139,11 @@ export default function NewArticle() {
           <button 
             type="submit"
             disabled={loading}
-            className={`w-full py-4 rounded-xl font-bold text-white transition shadow-lg ${
-              loading ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.98]'
+            className={`w-full py-4 rounded-2xl font-black text-white transition-all shadow-lg active:scale-95 ${
+              loading ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
-            {loading ? "Publishing..." : "Publish Article"}
+            {loading ? "Publishing..." : "Publish Discovery"}
           </button>
         </form>
       </div>

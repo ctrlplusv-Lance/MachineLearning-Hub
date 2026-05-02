@@ -1,133 +1,96 @@
+'use client';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-// This makes the links look good when shared on Messenger/Social Media
-export async function generateMetadata({ params }) {
-  const { data: article } = await supabase
-    .from('articles')
-    .select('title, content')
-    .eq('id', params.id)
-    .single();
+export default function ArticleDetail() {
+  const { id } = useParams();
+  const router = useRouter();
+  const [article, setArticle] = useState(null);
+  const [user, setUser] = useState(null);
+  const [userReaction, setUserReaction] = useState(null);
+  const [counts, setCounts] = useState({ likes: 0, dislikes: 0 });
 
-  return {
-    title: article?.title || "ML Hub Discovery",
-    description: article?.content?.substring(0, 160) || "Read this discovery on ML Hub.",
+  const fetchData = async () => {
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    setUser(authUser);
+
+    const { data, error } = await supabase.from('articles').select('*, profiles(username), comments(*, profiles(username))').eq('id', id).single();
+    if (error || !data) { router.push('/dashboard'); return; }
+    setArticle(data);
+
+    const { data: reacts } = await supabase.from('reactions').select('*').eq('article_id', id);
+    setCounts({
+      likes: reacts?.filter(r => r.reaction_type === 'like').length || 0,
+      dislikes: reacts?.filter(r => r.reaction_type === 'dislike').length || 0
+    });
+    
+    if (authUser) {
+      setUserReaction(reacts?.find(r => r.user_id === authUser.id)?.reaction_type || null);
+    }
   };
-}
 
-export default async function PublicArticlePage({ params }) {
-  const { id } = params;
+  useEffect(() => { if (id) fetchData(); }, [id]);
 
-  // 1. Fetch article data PLUS profiles, comments, and images
-  const { data: article, error } = await supabase
-    .from('articles')
-    .select(`
-      *,
-      profiles (username),
-      comments (
-        id,
-        content,
-        created_at,
-        profiles (username)
-      )
-    `)
-    .eq('id', id)
-    .single();
+  const formatTimestamp = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
-  if (error || !article) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-slate-800">Article not found</h1>
-          <Link href="/" className="text-blue-600 hover:underline mt-4 block">Return Home</Link>
-        </div>
-      </div>
-    );
-  }
+  const handleReaction = async (type) => {
+    if (!user) return alert("Sign in first!");
+    if (userReaction === type) {
+      await supabase.from('reactions').delete().match({ article_id: id, user_id: user.id });
+    } else {
+      await supabase.from('reactions').upsert({ article_id: id, user_id: user.id, reaction_type: type }, { onConflict: 'user_id, article_id' });
+    }
+    fetchData();
+  };
 
-  const rawName = article.profiles?.username || 'anonymous';
-  const displayName = rawName.includes('@') ? rawName.split('@')[0] : rawName;
+  if (!article) return <div className="p-20 text-center font-black">Syncing...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans p-4 md:p-12">
-      <article className="max-w-3xl mx-auto bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-8 md:p-12">
-          <header className="mb-8">
-            <Link href="/" className="text-blue-600 text-sm font-bold mb-6 inline-block hover:underline">
-              ← Back to Hub
-            </Link>
-            <h1 className="text-4xl font-extrabold text-slate-900 mb-6 leading-tight">
-              {article.title}
-            </h1>
-            
-            <div className="flex items-center gap-3 py-4 border-y border-slate-100 mb-8">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                {displayName.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <p className="text-slate-900 font-bold text-sm">@{displayName}</p>
-                <p className="text-slate-400 text-xs">
-                  Published on {new Date(article.created_at).toLocaleDateString()}
-                </p>
-              </div>
-            </div>
-          </header>
-
-          {/* FIXED: Added the Article Image Block */}
-          {article.image_url && (
-            <div className="mb-10 overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
-              <img 
-                src={article.image_url} 
-                alt={article.title} 
-                className="w-full h-auto object-cover max-h-[500px]"
-              />
-            </div>
-          )}
-
-          <div className="prose prose-slate max-w-none text-slate-700 leading-relaxed text-lg whitespace-pre-wrap mb-12">
-            {article.content}
+    <div className="min-h-screen bg-slate-50 p-6 md:p-12">
+      <div className="max-w-3xl mx-auto bg-white rounded-[3rem] border border-slate-200 p-8 md:p-12">
+        <Link href="/dashboard" className="text-blue-600 font-black text-xs mb-8 inline-block uppercase tracking-widest">← Back to Hub</Link>
+        
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-black">
+            {article.profiles?.username?.charAt(0).toUpperCase()}
           </div>
-
-          {/* --- COMMENT SECTION VIEW --- */}
-          <section className="mt-12 pt-8 border-t border-slate-100">
-            <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-              💬 Discussion ({article.comments?.length || 0})
-            </h3>
-            
-            <div className="space-y-4 mb-8">
-              {article.comments && article.comments.length > 0 ? (
-                article.comments.map((comment) => (
-                  <div key={comment.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs font-bold text-blue-700">
-                        @{(comment.profiles?.username || 'anonymous').split('@')[0]}
-                      </span>
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(comment.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <p className="text-slate-700 text-sm leading-relaxed">{comment.content}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-slate-400 text-center py-4 text-sm italic">No comments yet. Be the first to join the conversation!</p>
-              )}
-            </div>
-
-            <div className="bg-blue-50 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <p className="text-blue-900 font-semibold text-center sm:text-left">
-                Want to reply or post a comment?
-              </p>
-              <Link 
-                href="/auth" 
-                className="bg-blue-600 text-white px-6 py-3 rounded-full font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200"
-              >
-                Sign Up Free
-              </Link>
-            </div>
-          </section>
+          <div>
+            <p className="font-black text-sm">@{article.profiles?.username}</p>
+            <p className="text-[10px] text-slate-400 font-black uppercase">Published {formatTimestamp(article.created_at)}</p>
+          </div>
         </div>
-      </article>
+
+        <h1 className="text-4xl font-black mb-8 leading-tight">{article.title}</h1>
+        {article.image_url && <img src={article.image_url} className="w-full rounded-3xl mb-8 shadow-sm border border-slate-50" />}
+        <p className="text-lg text-slate-700 leading-relaxed mb-12 whitespace-pre-wrap">{article.content}</p>
+
+        <div className="flex gap-3 pb-12 border-b border-slate-50">
+          <button onClick={() => handleReaction('like')} className={`px-8 py-3 rounded-full font-black text-xs transition-all ${userReaction === 'like' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            {userReaction === 'like' ? '🔥 Helpful!' : '👍 Helpful'} ({counts.likes})
+          </button>
+          <button onClick={() => handleReaction('dislike')} className={`px-8 py-3 rounded-full font-black text-xs transition-all ${userReaction === 'dislike' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            👎 Not for me ({counts.dislikes})
+          </button>
+          <button onClick={() => navigator.clipboard.writeText(window.location.href)} className="bg-slate-100 px-8 py-3 rounded-full font-black text-xs text-slate-600">🔗 Copy Link</button>
+        </div>
+
+        <section className="mt-12">
+          <h3 className="text-xl font-black mb-8 flex items-center gap-2">💬 Discussion ({article.comments?.length || 0})</h3>
+          <div className="space-y-4">
+            {article.comments?.map(c => (
+              <div key={c.id} className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                <p className="text-xs font-black text-blue-700 mb-2">@{c.profiles?.username} • <span className="text-slate-400">{formatTimestamp(c.created_at)}</span></p>
+                <p className="text-sm text-slate-700">{c.content}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

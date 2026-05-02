@@ -55,15 +55,15 @@ export default function Dashboard() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [router]);
 
   // --- NOTIFICATION LOGIC ---
   const sendNotification = async (articleId, authorId, type) => {
+    // If you like your own post, don't send a notification
     if (user.id === authorId) return; 
 
-    const myUsername = user.email.split('@')[0];
+    const myUsername = user.user_metadata?.username || user.email.split('@')[0];
 
-    // FIXED: Check for existing unread notification 
     const { data: existing } = await supabase
       .from('notifications')
       .select('*')
@@ -71,7 +71,7 @@ export default function Dashboard() {
       .eq('user_id', authorId)
       .eq('type', type)
       .eq('is_read', false)
-      .maybeSingle(); // Better than .single() to avoid 406 errors
+      .maybeSingle();
 
     if (existing) {
       if (!existing.actor_usernames.includes(myUsername)) {
@@ -82,7 +82,6 @@ export default function Dashboard() {
           .eq('id', existing.id);
       }
     } else {
-      // FIXED: Notification insert (No 'message' column per schema)
       await supabase.from('notifications').insert({
         user_id: authorId,
         actor_usernames: [myUsername],
@@ -107,7 +106,6 @@ export default function Dashboard() {
       }, { onConflict: 'user_id, article_id' });
 
       if (type === 'like') {
-        // FIXED: Using article.author_id to match your schema
         await sendNotification(articleId, article.author_id, 'like');
       }
     }
@@ -146,7 +144,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-4">
           <NotificationBell user={user} />
           <span className="text-xs font-black text-blue-600 bg-blue-50 px-4 py-1.5 rounded-full">
-            @{user?.email?.split('@')[0]}
+            @{user?.user_metadata?.username || user?.email?.split('@')[0]}
           </span>
           <button onClick={() => router.push('/dashboard/new')} className="bg-blue-600 text-white px-5 py-2 rounded-full text-sm font-black hover:bg-blue-700 transition-colors">+ New Post</button>
           <button onClick={async () => { await supabase.auth.signOut(); router.push('/'); }} className="text-slate-400 hover:text-red-500 text-sm font-black transition-colors">Logout</button>
@@ -164,7 +162,6 @@ export default function Dashboard() {
               const userReaction = article.reactions?.find(r => r.user_id === user?.id)?.reaction_type;
               return (
                 <article key={article.id} className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 relative group transition-all hover:shadow-md">
-                  {/* FIXED: Check for author_id for delete permission */}
                   {user?.id === article.author_id && (
                     <button onClick={() => handleDeleteArticle(article.id)} className="absolute top-6 right-6 text-slate-300 hover:text-red-500 transition-colors p-2 text-xl">🗑️</button>
                   )}

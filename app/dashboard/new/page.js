@@ -47,7 +47,6 @@ export default function NewArticle() {
       }
 
       // 3. Insert Article into 'articles' table
-      // Matches the 'author_id' column in your schema
       const { data: newArticle, error: articleError } = await supabase
         .from('articles')
         .insert([{ 
@@ -61,20 +60,29 @@ export default function NewArticle() {
 
       if (articleError) throw articleError;
 
-      // 4. Trigger Global Notification
-      // FIXED: Strictly removed 'message' to match your schema
-      const myUsername = user.email ? user.email.split('@')[0] : 'User';
+      // 4. Trigger Notifications (Double Insert)
+      const myUsername = user.user_metadata?.username || user.email?.split('@')[0] || 'User';
       
-      const { error: notifError } = await supabase.from('notifications').insert({
-        user_id: null, 
-        actor_usernames: [myUsername], // Schema expects text array
-        article_id: newArticle.id,
-        type: 'new_article'
-      });
+      const { error: notifError } = await supabase.from('notifications').insert([
+        // NOTIFICATION 1: For the public (Global)
+        {
+          user_id: null, 
+          actor_usernames: [myUsername],
+          article_id: newArticle.id,
+          type: 'new_article'
+        },
+        // NOTIFICATION 2: For the Author (Personalized Success Message)
+        {
+          user_id: user.id, // Only visible to you
+          actor_usernames: ['You'],
+          article_id: newArticle.id,
+          type: 'author_success' // This matches the logic in your NotificationBell.js
+        }
+      ]);
 
       if (notifError) {
-  console.error("Notification Sync Error:", notifError);
-}
+        console.error("Notification Sync Error:", notifError);
+      }
 
       router.push('/dashboard');
       router.refresh(); 

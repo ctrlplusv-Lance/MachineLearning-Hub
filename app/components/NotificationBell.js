@@ -9,6 +9,7 @@ export default function NotificationBell({ user }) {
   const dropdownRef = useRef(null);
   const router = useRouter();
 
+  // Fetches both personal notifications and global ones (where user_id is null)
   const fetchNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
@@ -16,24 +17,35 @@ export default function NotificationBell({ user }) {
       .or(`user_id.eq.${user.id},user_id.is.null`) 
       .order('created_at', { ascending: false })
       .limit(20);
-    setNotifications(data || []);
+    
+    // Filter out your own global "new_article" notifications so you don't see a duplicate 
+    // of your own post alongside the "Success" notification.
+    const myUsername = user.email?.split('@')[0];
+    const filteredData = data?.filter(n => 
+      !(n.type === 'new_article' && n.actor_usernames.includes(myUsername))
+    );
+
+    setNotifications(filteredData || []);
   };
 
   useEffect(() => {
     fetchNotifications();
 
+    // Real-time subscription for new notifications
     const channel = supabase.channel(`notifs-combined`)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'notifications'
       }, (payload) => {
+        // Refresh if it's a global notification or intended for this specific user
         if (!payload.new.user_id || payload.new.user_id === user.id) {
           fetchNotifications();
         }
       })
       .subscribe();
 
+    // Click-away listener to close dropdown
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setOpen(false);
@@ -47,35 +59,23 @@ export default function NotificationBell({ user }) {
     };
   }, [user.id]);
 
-  // FIXED: Improved to be specific to one notification
-  const markAsRead = async (id = null) => {
-    if (id) {
-      // Mark ONLY the specific notification clicked
-      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-      fetchNotifications(); // Refresh to update the UI local state
-    }
+  // Marks a specific notification as read in the database
+  const markAsRead = async (id) => {
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    // Local state update for immediate feedback
+    setNotifications(prev => 
+      prev.map(n => n.id === id ? { ...n, is_read: true } : n)
+    );
   };
 
-  // FIXED: Handle clicking the notification without clearing others
   const handleNotifClick = async (n) => {
-    // 1. Mark ONLY this specific one as read in DB
     if (!n.is_read) {
       await markAsRead(n.id);
     }
-    
-    // 2. Close the dropdown
     setOpen(false);
-
-    // 3. Redirect to the article page
     if (n.article_id) {
       router.push(`/dashboard/article/${n.article_id}`);
     }
-  };
-
-  const handleToggle = () => {
-    // FIXED: Removed the automatic markAsRead call 
-    // Now opening the bell won't clear your unread count
-    setOpen(!open);
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
@@ -83,7 +83,7 @@ export default function NotificationBell({ user }) {
   return (
     <div className="relative" ref={dropdownRef}>
       <button 
-        onClick={handleToggle} 
+        onClick={() => setOpen(!open)} 
         className={`relative p-2 rounded-full transition-all ${open ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:bg-slate-100'}`}
       >
         <span className="text-xl">🔔</span>
@@ -114,29 +114,38 @@ export default function NotificationBell({ user }) {
                   onClick={() => handleNotifClick(n)}
                   className={`p-4 border-b border-slate-50 flex gap-3 items-start cursor-pointer hover:bg-blue-50/30 transition-all active:scale-[0.98] relative ${!n.is_read ? 'bg-blue-50/20' : ''}`}
                 >
-                  {/* Visual indicator for unread */}
+                  {/* Unread status bar */}
                   {!n.is_read && (
-                    <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-600 rounded-full" />
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-600 rounded-full" />
                   )}
 
                   <div className="relative flex-shrink-0">
                     <img 
                       src={n.articles?.image_url || 'https://via.placeholder.com/100'} 
                       className="w-12 h-12 rounded-xl object-cover border border-slate-100 shadow-sm" 
-                      alt="Article"
+                      alt="Thumbnail"
                     />
                     <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm text-[10px]">
-                      {n.type === 'new_article' ? '📝' : '🔥'}
+                      {n.type === 'author_success' ? '✅' : n.type === 'new_article' ? '📝' : '🔥'}
                     </div>
                   </div>
                   
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-slate-800 leading-snug mb-1">
-                      <span className="font-black text-blue-900">
-                        @{n.actor_usernames?.[0] || 'Someone'}
-                      </span>
-                      {n.type === 'new_article' ? ' posted a new discovery: ' : ' liked your discovery '}
-                      <span className="font-bold text-slate-600 italic">"{n.articles?.title || 'Deleted Article'}"</span>
+                      {n.type === 'author_success' ? (
+                        <>
+                          <span className="font-black text-green-600">Success! </span>
+                          You have successfully published: 
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-black text-blue-900">
+                            @{n.actor_usernames?.[0] || 'Someone'}
+                          </span>
+                          {n.type === 'new_article' ? ' posted a new discovery: ' : ' liked your discovery '}
+                        </>
+                      )}
+                      <span className="font-bold text-slate-600 italic"> "{n.articles?.title || 'Deleted Article'}"</span>
                     </p>
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
                       {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

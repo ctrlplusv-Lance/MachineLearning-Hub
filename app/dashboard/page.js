@@ -92,10 +92,8 @@ export default function Dashboard() {
     loadData(user.id);
   };
 
-  // NATIVE SHARING LOGIC
   const handleShare = async (article) => {
     const shareUrl = `${window.location.origin}/dashboard/article/${article.id}`;
-    
     if (navigator.share) {
       try {
         await navigator.share({
@@ -103,178 +101,180 @@ export default function Dashboard() {
           text: `Check out this discovery by @${article.profiles?.username || 'anonymous'}:`,
           url: shareUrl,
         });
-      } catch (err) {
-        console.log("User cancelled or share failed", err);
-      }
+      } catch (err) { console.log("Share failed", err); }
     } else {
-      // Desktop Fallback
       await navigator.clipboard.writeText(shareUrl);
-      alert("Link copied to clipboard! You can now paste it anywhere.");
+      alert("Link copied to clipboard! ✨");
     }
-  };
-
-  const formatTimestamp = (dateString) => {
-    const date = new Date(dateString);
-    return `${date.toLocaleDateString()} • ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   };
 
   const handleDeleteArticle = async (articleId) => {
     if (!confirm("Delete this discovery?")) return;
     const { error } = await supabase.from('articles').delete().eq('id', articleId);
-    if (error) alert("Error deleting: " + error.message);
+    if (error) alert("Error: " + error.message);
     else loadData(user.id);
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-6 text-center">
-      <div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="text-center">
         <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-blue-600 font-black uppercase text-[10px] tracking-[0.3em]">Syncing Hub</p>
+        <p className="text-blue-900 font-black uppercase text-[9px] tracking-[0.3em]">Syncing Hub</p>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-24 md:pb-0">
-      {/* NAVBAR */}
-      <nav className="bg-white/80 backdrop-blur-md border-b p-3 md:p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
-        <h1 className="text-lg md:text-xl font-black text-slate-900 cursor-pointer tracking-tighter" onClick={() => router.push('/dashboard')}>
-          Art<span className="text-blue-600">Hub</span>
-        </h1>
-        
-        <div className="flex items-center gap-2 md:gap-4">
-          <NotificationBell user={user} />
+    <div className="min-h-screen bg-slate-50 font-sans pb-24 lg:pb-10">
+      {/* PREMIUM NAVBAR */}
+      <nav className="bg-white/80 backdrop-blur-xl border-b border-slate-100 p-4 sticky top-0 z-50 shadow-sm transition-all">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <h1 className="text-xl font-black text-slate-900 cursor-pointer tracking-tighter" onClick={() => router.push('/dashboard')}>
+            Art<span className="text-blue-600">Hub</span>
+          </h1>
           
-          <Link href="/dashboard/profile" className="flex items-center gap-2 group">
-            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-blue-50 bg-slate-100 shadow-sm group-hover:border-blue-400 transition-all">
+          <div className="flex items-center gap-4">
+            <NotificationBell user={user} />
+            
+            <Link href="/dashboard/profile" className="w-9 h-9 rounded-2xl overflow-hidden border-2 border-white shadow-md hover:scale-110 transition-transform">
               {userProfile?.avatar_url ? (
                 <img src={userProfile.avatar_url} className="w-full h-full object-cover" alt="Profile" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs opacity-40">👤</div>
+                <div className="w-full h-full bg-blue-50 flex items-center justify-center text-xs">👤</div>
               )}
-            </div>
-          </Link>
+            </Link>
 
-          <button 
-            onClick={() => router.push('/dashboard/new')} 
-            className="hidden sm:block bg-blue-600 text-white px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all"
-          >
-            + Post
-          </button>
-          
-          <button onClick={async () => { await supabase.auth.signOut(); router.push('/'); }} className="text-slate-400 hover:text-red-500 text-xs font-black px-2 transition-colors">Logout</button>
+            <button 
+              onClick={() => router.push('/dashboard/new')} 
+              className="hidden md:block bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-200 transition-all active:scale-95"
+            >
+              + Post Discovery
+            </button>
+            
+            <button onClick={async () => { await supabase.auth.signOut(); router.push('/'); }} className="text-slate-400 hover:text-red-500 text-[10px] font-black uppercase tracking-widest transition-colors ml-2">Logout</button>
+          </div>
         </div>
       </nav>
 
-      {/* MOBILE FLOATING ACTION BUTTON */}
+      {/* MOBILE FAB */}
       <button 
         onClick={() => router.push('/dashboard/new')}
-        className="sm:hidden fixed bottom-6 right-6 z-50 bg-blue-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl font-bold active:scale-90 transition-transform"
+        className="md:hidden fixed bottom-8 right-8 z-50 bg-gradient-to-br from-blue-600 to-indigo-700 text-white w-16 h-16 rounded-[2rem] shadow-2xl shadow-blue-400 flex items-center justify-center text-3xl transition-transform active:scale-90"
       >
         +
       </button>
 
-      <main className="max-w-6xl mx-auto p-4 md:p-6 lg:p-10 grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-10">
+      <main className="max-w-6xl mx-auto p-4 md:p-8 lg:p-10 grid grid-cols-1 lg:grid-cols-3 gap-10">
         
-        {/* FEED SECTION */}
-        <section className="lg:col-span-2 space-y-6 md:space-y-8">
+        {/* FEED */}
+        <section className="lg:col-span-2 space-y-8 md:space-y-12">
           
-          <div className="flex flex-col gap-4">
-            <h2 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Recent Activity</h2>
-            
+          <div className="flex flex-col gap-6">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Recent Signals</h2>
             <div className="relative group w-full">
               <input 
                 type="text"
                 placeholder="Search keywords..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white border border-slate-200 py-3.5 px-12 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-blue-500/5 outline-none transition-all"
+                className="w-full bg-white border border-slate-100 py-4 px-14 rounded-3xl text-sm font-bold focus:ring-8 focus:ring-blue-500/5 focus:border-blue-200 outline-none transition-all shadow-sm"
               />
-              <span className="absolute left-5 top-1/2 -translate-y-1/2 opacity-30 text-sm">🔍</span>
+              <span className="absolute left-6 top-1/2 -translate-y-1/2 text-lg grayscale group-focus-within:grayscale-0 transition-all">🔍</span>
             </div>
           </div>
           
-          {filteredArticles.length === 0 ? (
-            <div className="bg-white p-12 md:p-20 rounded-[2.5rem] border border-dashed border-slate-200 text-center">
-              <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No discoveries found</p>
-            </div>
-          ) : (
-            filteredArticles.map((article) => {
-              const userReaction = article.reactions?.find(r => r.user_id === user?.id)?.reaction_type;
-              return (
-                <article key={article.id} className="bg-white p-5 md:p-7 rounded-[2rem] md:rounded-[2.5rem] shadow-sm border border-slate-100 relative group transition-all hover:shadow-xl hover:shadow-blue-900/5">
-                  
-                  {/* Author Header */}
-                  <div className="flex items-center justify-between mb-4 md:mb-6">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 md:w-10 md:h-10 rounded-full overflow-hidden border border-slate-100 bg-slate-50">
-                        {article.profiles?.avatar_url ? (
-                          <img src={article.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-xs opacity-30">👤</div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-[11px] md:text-xs font-black text-slate-900 uppercase">@{article.profiles?.username || 'anonymous'}</p>
-                        <p className="text-[9px] md:text-[10px] font-bold text-slate-300 uppercase">{formatTimestamp(article.created_at)}</p>
-                      </div>
+          {filteredArticles.map((article) => {
+            const userReaction = article.reactions?.find(r => r.user_id === user?.id)?.reaction_type;
+            return (
+              <article key={article.id} className="group bg-white p-6 md:p-8 rounded-[2.5rem] border border-slate-100 transition-all duration-500 hover:shadow-[0_20px_50px_rgba(15,23,42,0.06)] hover:-translate-y-1">
+                
+                {/* Header */}
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-2xl overflow-hidden bg-slate-50 border border-slate-100 shadow-sm">
+                      {article.profiles?.avatar_url ? (
+                        <img src={article.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-blue-600 font-black bg-blue-50 text-xs">
+                          {article.profiles?.username?.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                     </div>
-                    {user?.id === article.author_id && (
-                      <button onClick={() => handleDeleteArticle(article.id)} className="text-slate-300 hover:text-red-500 p-2 transition-colors">🗑️</button>
-                    )}
-                  </div>
-
-                  {/* Post Content */}
-                  <div className="cursor-pointer" onClick={() => router.push(`/dashboard/article/${article.id}`)}>
-                    <h3 className="text-lg md:text-xl font-black text-slate-800 mb-3 md:mb-4 leading-tight group-hover:text-blue-600 transition-colors">{article.title}</h3>
-                    {article.image_url && (
-                      <div className="overflow-hidden rounded-2xl md:rounded-[2rem] mb-4 md:mb-5 aspect-video md:aspect-auto">
-                        <img src={article.image_url} className="w-full h-full md:h-96 object-cover transition-transform duration-700 group-hover:scale-[1.02]" alt="Post" />
-                      </div>
-                    )}
-                    <p className="text-slate-600 mb-6 leading-relaxed line-clamp-3 text-sm md:text-base font-medium">{article.content}</p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center justify-between pt-4 md:pt-5 border-t border-slate-50">
-                    <div className="flex gap-4 md:gap-5">
-                      <button onClick={() => handleReaction(article.id, 'like')} className={`flex items-center gap-1.5 text-xs font-black transition-all active:scale-90 ${userReaction === 'like' ? 'text-blue-600' : 'text-slate-400 hover:text-blue-500'}`}>
-                        🔥 <span>{article.like_count}</span>
-                      </button>
-                      <button onClick={() => setActiveArticle(article)} className="text-slate-400 text-[10px] font-black uppercase tracking-widest hover:text-blue-600 transition-colors">💬 Comment</button>
+                    <div>
+                      <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">@{article.profiles?.username || 'anonymous'}</p>
+                      <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                        {new Date(article.created_at).toLocaleDateString()} • {new Date(article.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                      </p>
                     </div>
-                    {/* ENHANCED SHARE BUTTON */}
+                  </div>
+                  {user?.id === article.author_id && (
+                    <button onClick={() => handleDeleteArticle(article.id)} className="text-slate-200 hover:text-red-500 transition-colors p-2 text-sm">🗑️</button>
+                  )}
+                </div>
+
+                {/* Content */}
+                <div className="cursor-pointer mb-8" onClick={() => router.push(`/dashboard/article/${article.id}`)}>
+                  <h3 className="text-2xl md:text-3xl font-black text-slate-900 mb-4 leading-tight tracking-tight group-hover:text-blue-600 transition-colors">
+                    {article.title}
+                  </h3>
+                  {article.image_url && (
+                    <div className="relative overflow-hidden rounded-[2.5rem] mb-6 shadow-inner bg-slate-50 border border-slate-50">
+                      <img src={article.image_url} className="w-full h-auto md:max-h-[500px] object-cover transition-transform duration-1000 group-hover:scale-[1.03]" alt="Visual" />
+                    </div>
+                  )}
+                  <p className="text-slate-600 leading-relaxed line-clamp-3 font-medium text-base md:text-lg opacity-80 group-hover:opacity-100 transition-opacity">
+                    {article.content}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-6 border-t border-slate-50">
+                  <div className="flex gap-3">
                     <button 
-                      onClick={() => handleShare(article)} 
-                      className="p-2 bg-slate-50 rounded-xl hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-all flex items-center gap-1"
+                      onClick={() => handleReaction(article.id, 'like')} 
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-90 ${userReaction === 'like' ? 'bg-orange-600 text-white shadow-lg shadow-orange-100' : 'bg-slate-50 text-slate-400 hover:bg-orange-50 hover:text-orange-600'}`}
                     >
-                      <span className="text-xs font-black uppercase hidden sm:inline">Share</span>
-                      <span>🔗</span>
+                      🔥 {article.like_count}
+                    </button>
+                    <button 
+                      onClick={() => setActiveArticle(article)} 
+                      className="bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+                    >
+                      💬 Discuss
                     </button>
                   </div>
-                </article>
-              );
-            })
-          )}
+                  <button 
+                    onClick={() => handleShare(article)} 
+                    className="w-11 h-11 flex items-center justify-center bg-slate-50 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
+                  >
+                    🔗
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </section>
 
         {/* SIDEBAR */}
         <aside className="hidden lg:block">
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 sticky top-28 shadow-sm">
-            <h2 className="text-[10px] font-black mb-8 uppercase tracking-[0.2em] text-slate-400">Trending Now</h2>
-            <div className="space-y-8">
+          <div className="bg-white/70 backdrop-blur-md p-8 rounded-[3rem] border border-white/50 sticky top-28 shadow-xl shadow-slate-200/50">
+            <h2 className="text-[10px] font-black mb-10 uppercase tracking-[0.25em] text-slate-400 flex items-center gap-2">
+              <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span>
+              Trending Discoveries
+            </h2>
+            <div className="space-y-10">
               {topArticles.map((item, index) => (
-                <div key={item.id} className="flex items-start gap-4 cursor-pointer group" onClick={() => router.push(`/dashboard/article/${item.id}`)}>
-                  <span className="text-slate-100 font-black text-3xl group-hover:text-blue-100 transition-colors">{(index + 1).toString().padStart(2, '0')}</span>
+                <div key={item.id} className="flex items-start gap-5 cursor-pointer group" onClick={() => router.push(`/dashboard/article/${item.id}`)}>
+                  <span className="text-slate-100 font-black text-4xl leading-none transition-colors group-hover:text-blue-100">{(index + 1).toString().padStart(2, '0')}</span>
                   <div>
-                    <p className="text-sm font-black text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight mb-1">{item.title}</p>
-                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider">{item.like_count} agrees</span>
+                    <p className="text-sm font-black text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight mb-2 uppercase tracking-tight">{item.title}</p>
+                    <span className="text-[9px] bg-slate-50 text-slate-400 px-2 py-1 rounded-md font-black uppercase tracking-widest">{item.like_count} agrees</span>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="mt-12 pt-8 border-t border-slate-50 text-center">
-               <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">© 2026 ArtHub v2.0</p>
+            <div className="mt-14 pt-8 border-t border-slate-100/50 text-center">
+               <p className="text-[9px] font-black text-slate-200 uppercase tracking-[0.3em]">© 2026 ArtHub Platform</p>
             </div>
           </div>
         </aside>

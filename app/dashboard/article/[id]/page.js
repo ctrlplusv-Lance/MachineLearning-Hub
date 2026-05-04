@@ -16,11 +16,9 @@ export default function ArticleView({ params: paramsPromise }) {
 
   useEffect(() => {
     const fetchData = async () => {
-      // Get the current logged-in user
       const { data: { user: authUser } } = await supabase.auth.getUser();
       setUser(authUser);
 
-      // Fetch the article with avatar_url included
       const { data, error } = await supabase
         .from('articles')
         .select(`
@@ -46,7 +44,6 @@ export default function ArticleView({ params: paramsPromise }) {
     if (id) {
       fetchData();
 
-      // REAL-TIME: Listen for updates to this article
       const channel = supabase.channel(`article-${id}`)
         .on('postgres_changes', { 
           event: 'UPDATE', 
@@ -75,22 +72,18 @@ export default function ArticleView({ params: paramsPromise }) {
     setIsLiking(false);
   };
 
-  // ENHANCED SHARE LOGIC (Mobile + Desktop)
   const handleShare = async () => {
-    const shareData = {
-      title: article.title,
-      text: `Check out this discovery by @${article.profiles?.username}:`,
-      url: window.location.href,
-    };
-
+    const shareUrl = window.location.href;
     if (navigator.share) {
       try {
-        await navigator.share(shareData);
-      } catch (err) {
-        console.log("Share failed", err);
-      }
+        await navigator.share({
+          title: article.title,
+          text: `Check out this discovery by @${article.profiles?.username}:`,
+          url: shareUrl,
+        });
+      } catch (err) { console.log("Share failed", err); }
     } else {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(shareUrl);
       alert("Link copied to clipboard! ✨");
     }
   };
@@ -99,7 +92,7 @@ export default function ArticleView({ params: paramsPromise }) {
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="text-center">
         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-blue-900 font-black animate-pulse uppercase tracking-widest text-[10px]">Syncing Discovery...</p>
+        <p className="text-blue-900 font-black uppercase tracking-[0.3em] text-[9px]">Syncing Discovery</p>
       </div>
     </div>
   );
@@ -107,97 +100,101 @@ export default function ArticleView({ params: paramsPromise }) {
   if (!article) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-10 pb-20 font-sans">
-      <div className="max-w-3xl mx-auto">
-        {/* Navigation */}
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8 lg:p-12 pb-24 font-sans">
+      <div className="max-w-4xl mx-auto">
+        
+        {/* Editorial Navigation */}
         <button 
           onClick={() => router.push('/dashboard')} 
-          className="mb-8 text-slate-400 hover:text-blue-600 font-black text-[10px] uppercase tracking-widest transition flex items-center gap-2 group"
+          className="mb-10 text-slate-400 hover:text-blue-600 font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center gap-3 group"
         >
-          <span className="group-hover:-translate-x-1 transition-transform">←</span> Back to Hub
+          <span className="w-8 h-8 rounded-xl bg-white shadow-sm flex items-center justify-center group-hover:-translate-x-1 transition-transform border border-slate-100 text-sm">←</span> 
+          Return to Hub
         </button>
 
-        {/* Main Content */}
-        <article className="bg-white p-6 md:p-12 rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
+        <article className="bg-white rounded-[3rem] shadow-[0_20px_60px_-20px_rgba(15,23,42,0.05)] border border-slate-100 overflow-hidden">
           
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              {/* Profile Avatar Integration */}
-              <div className="w-12 h-12 rounded-2xl overflow-hidden border border-slate-100 bg-slate-50 shadow-sm flex-shrink-0">
-                {article.profiles?.avatar_url ? (
-                  <img src={article.profiles.avatar_url} className="w-full h-full object-cover" alt="Profile" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-blue-600 font-black text-lg bg-blue-50">
-                    {article.profiles?.username?.charAt(0) || 'A'}
-                  </div>
-                )}
-              </div>
-              <div>
-                <p className="text-xs font-black text-slate-900 uppercase tracking-tighter">
-                  @{article.profiles?.username || 'anonymous'}
-                </p>
-                <p className="text-[10px] text-slate-400 font-black uppercase tracking-tighter">
-                  {article.created_at ? new Date(article.created_at).toLocaleDateString(undefined, { 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                  }) : 'Recent'} • Public Discovery
-                </p>
-              </div>
-            </div>
-            
-            <span className="hidden sm:block bg-blue-50 text-blue-600 text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-[0.1em]">
-              Verified Discovery
-            </span>
-          </div>
-
-          <h1 className="text-3xl md:text-5xl font-black text-slate-900 mb-8 leading-[1.1] tracking-tight">
-            {article.title}
-          </h1>
-
+          {/* Cover Image Integration */}
           {article.image_url && (
-            <div className="mb-10 overflow-hidden rounded-[2rem] border border-slate-100 shadow-xl bg-slate-50 group">
+            <div className="w-full relative group">
               <img 
                 src={article.image_url} 
-                alt={article.title} 
-                className="w-full h-auto max-h-[700px] object-contain mx-auto transition-transform duration-700 group-hover:scale-[1.02]"
+                alt="" 
+                className="w-full h-auto max-h-[600px] object-cover border-b border-slate-50"
               />
+              <div className="absolute top-6 left-6">
+                <span className="bg-white/90 backdrop-blur-md text-blue-600 text-[9px] font-black px-4 py-2 rounded-xl uppercase tracking-widest shadow-xl border border-white/50">
+                   Visual Discovery
+                </span>
+              </div>
             </div>
           )}
 
-          <div className="prose prose-slate max-w-none">
-            <p className="text-base md:text-lg text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
-              {article.content}
-            </p>
+          <div className="p-6 md:p-16">
+            {/* Author Section */}
+            <div className="flex items-center justify-between mb-10 pb-8 border-b border-slate-50">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-white bg-slate-50 shadow-md">
+                  {article.profiles?.avatar_url ? (
+                    <img src={article.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-blue-600 font-black text-xl bg-blue-50">
+                      {article.profiles?.username?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-black text-slate-900 uppercase tracking-tight">@{article.profiles?.username || 'anonymous'}</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    Post Published on {new Date(article.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Headline */}
+            <h1 className="text-3xl md:text-6xl font-black text-slate-900 mb-10 leading-[1.05] tracking-tight">
+              {article.title}
+            </h1>
+
+            {/* Body Text */}
+            <div className="prose prose-slate max-w-none">
+              <p className="text-lg md:text-xl text-slate-600 leading-relaxed whitespace-pre-wrap font-medium opacity-90">
+                {article.content}
+              </p>
+            </div>
+            
+            {/* Actions Bar */}
+            <div className="mt-16 flex flex-col sm:flex-row gap-4">
+               <button 
+                onClick={handleLike}
+                disabled={isLiking}
+                className="flex-1 flex items-center justify-center gap-3 bg-orange-600 hover:bg-orange-700 text-white px-8 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-xl shadow-orange-100 disabled:opacity-50"
+               >
+                 🔥 {article.helpful_count || 0} Helpful Signals
+               </button>
+               
+               <button 
+                onClick={handleShare}
+                className="flex-1 flex items-center justify-center gap-3 bg-slate-900 hover:bg-slate-800 text-white px-8 py-5 rounded-[1.5rem] font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-xl shadow-slate-200"
+               >
+                 🔗 Amplify Signal (Share)
+               </button>
+            </div>
+
+            {/* Thread Section */}
+            <div className="mt-16 bg-slate-50/50 rounded-[2.5rem] p-4 md:p-10 border border-slate-50">
+              <CommentSection articleId={id} user={user} />
+            </div>
           </div>
-          
-          <div className="mt-12 pt-8 border-t border-slate-100 flex flex-col md:flex-row gap-4">
-             <button 
-              onClick={handleLike}
-              disabled={isLiking}
-              className={`flex-1 flex items-center justify-center gap-2 bg-slate-50 hover:bg-orange-50 text-slate-500 hover:text-orange-600 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 border border-transparent hover:border-orange-100 ${isLiking ? 'opacity-50' : ''}`}
-             >
-                🔥 {article.helpful_count > 0 ? article.helpful_count : ''} Helpful Discovery
-             </button>
-             
-             <button 
-              onClick={handleShare}
-              className="flex-1 flex items-center justify-center gap-2 bg-slate-50 hover:bg-blue-50 text-slate-500 hover:text-blue-600 px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 border border-transparent hover:border-blue-100"
-             >
-                🔗 Share Link
-             </button>
-          </div>
-
-          <hr className="my-10 border-slate-50" />
-
-          {/* STEP 2 INTEGRATION: The Comment Section */}
-          <CommentSection articleId={id} user={user} />
-
         </article>
 
-        <div className="mt-10 text-center">
-          <p className="text-slate-300 font-black text-[9px] uppercase tracking-[0.2em] mb-4">End of Discovery</p>
-          <div className="w-1 h-1 bg-slate-200 rounded-full mx-auto"></div>
+        <div className="mt-12 text-center">
+          <div className="inline-flex items-center gap-4">
+             <div className="w-10 h-[1px] bg-slate-200"></div>
+             <p className="text-slate-300 font-black text-[9px] uppercase tracking-[0.4em]">Signal End</p>
+             <div className="w-10 h-[1px] bg-slate-200"></div>
+          </div>
         </div>
       </div>
     </div>

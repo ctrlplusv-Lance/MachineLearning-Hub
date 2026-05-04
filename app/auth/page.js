@@ -15,19 +15,21 @@ export default function AuthPage() {
     setLoading(true);
     setMessage('');
     
+    // Dynamically gets your current domain (localhost or machinelearnhub.vercel.app)
+    const baseUrl = window.location.origin;
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // This ensures they come back to your site after clicking the email
-        emailRedirectTo: `${window.location.origin}/dashboard`,
+        // FIXED: Point this to your auth callback route for the handshake
+        emailRedirectTo: `${baseUrl}/auth/callback`,
       }
     });
 
     if (error) {
       setMessage(`Error: ${error.message}`);
     } else {
-      // Supabase sends the email automatically if "Confirm email" is ON
       setMessage('✅ Check your inbox! We sent a verification link.');
       setEmail('');
       setPassword('');
@@ -46,7 +48,6 @@ export default function AuthPage() {
     });
 
     if (error) {
-      // If they haven't confirmed their email, Supabase will return this specific error
       if (error.message.includes("Email not confirmed")) {
         setMessage("⚠️ Please confirm your email before logging in.");
       } else {
@@ -126,7 +127,7 @@ export default function AuthPage() {
         </form>
         
         <div className="mt-10 pt-8 border-t border-slate-50 text-center">
-           <p className="text-slate-300 font-bold text-[9px] uppercase tracking-widest">
+            <p className="text-slate-300 font-bold text-[9px] uppercase tracking-widest">
             Protocol maintained by <span className="text-slate-900">Lance Ian E. Moquerio</span>
           </p>
         </div>

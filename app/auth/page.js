@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase'; // daad ang path, match sa lib folder
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
 export default function AuthPage() {
@@ -10,7 +10,6 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // Step 5: Sign Up logic [cite: 95, 96]
   const handleSignUp = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -19,17 +18,23 @@ export default function AuthPage() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        // This ensures they come back to your site after clicking the email
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      }
     });
 
     if (error) {
-      setMessage(`Error: ${error.message}`); // [cite: 98, 104]
+      setMessage(`Error: ${error.message}`);
     } else {
-      setMessage('Registration successful! Check your email for a confirmation link.'); // [cite: 98]
+      // Supabase sends the email automatically if "Confirm email" is ON
+      setMessage('✅ Check your inbox! We sent a verification link.');
+      setEmail('');
+      setPassword('');
     }
     setLoading(false);
   };
 
-  // Step 5: Login logic [cite: 95, 97]
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -41,82 +46,90 @@ export default function AuthPage() {
     });
 
     if (error) {
-      setMessage(`Error: ${error.message}`); // [cite: 98, 104]
+      // If they haven't confirmed their email, Supabase will return this specific error
+      if (error.message.includes("Email not confirmed")) {
+        setMessage("⚠️ Please confirm your email before logging in.");
+      } else {
+        setMessage(`Error: ${error.message}`);
+      }
     } else {
-      setMessage('Login successful! Redirecting...'); // [cite: 98]
-      // This sends the user to the dashboard after a successful login [cite: 55, 56]
+      setMessage('Login successful! Entering dashboard...');
       router.push('/dashboard'); 
     }
     setLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
-        <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">Account Access</h2>
+    <div className="min-h-screen flex items-center justify-center bg-[#f8fafc] p-6 font-sans">
+      <div className="bg-white p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] w-full max-w-md border border-slate-50">
         
-        <form className="space-y-4">
-          {/* Requirement: Email Field [cite: 49, 90] */}
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-blue-600 rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200 text-2xl">
+            🚀
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">ArtHub Access</h2>
+          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-2">Machine Learning Discovery Hub</p>
+        </div>
+        
+        <form className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Email Address</label>
             <input
               type="email"
-              placeholder="name@example.com"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-black"
+              placeholder="engineer@domain.com"
+              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-200 outline-none transition-all text-slate-700 font-medium"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
 
-          {/* Requirement: Password Field [cite: 50, 91] */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Password</label>
             <input
               type="password"
               placeholder="••••••••"
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-black"
+              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/5 focus:border-blue-200 outline-none transition-all text-slate-700 font-medium"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
           
-          <div className="flex gap-4 pt-2">
-            {/* Requirement: Login Button [cite: 52, 93] */}
+          <div className="flex flex-col gap-3 pt-4">
             <button 
               type="button"
               onClick={handleLogin} 
               disabled={loading}
-              className="flex-1 bg-green-600 text-white p-3 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
+              className="w-full bg-slate-900 text-white p-4 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:bg-blue-600 transition-all active:scale-[0.98] disabled:opacity-50"
             >
-              {loading ? 'Processing...' : 'Login'}
+              {loading ? 'Authenticating...' : 'Sign In'}
             </button>
 
-            {/* Requirement: Sign Up Button [cite: 51, 92] */}
             <button 
               type="button"
               onClick={handleSignUp} 
               disabled={loading}
-              className="flex-1 bg-blue-600 text-white p-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="w-full bg-white text-slate-900 border-2 border-slate-100 p-4 rounded-2xl font-black text-[11px] uppercase tracking-widest hover:border-blue-200 hover:text-blue-600 transition-all active:scale-[0.98] disabled:opacity-50"
             >
-              Sign Up
+              Create Account
             </button>
           </div>
           
-          {/* Requirement: Success/Error Messages [cite: 98, 104] */}
           {message && (
-            <div className={`mt-4 p-3 text-center text-sm font-medium rounded-lg ${
-              message.includes('Error') ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-700'
+            <div className={`mt-6 p-4 text-center text-[11px] font-black uppercase tracking-tight rounded-2xl animate-in fade-in slide-in-from-bottom-2 ${
+              message.includes('Error') || message.includes('⚠️') ? 'bg-red-50 text-red-500 border border-red-100' : 'bg-blue-50 text-blue-600 border border-blue-100'
             }`}>
               {message}
             </div>
           )}
         </form>
         
-        <p className="mt-6 text-center text-gray-500 text-xs">
-          Developed by: Lance Ian E. Moquerio
-        </p>
+        <div className="mt-10 pt-8 border-t border-slate-50 text-center">
+           <p className="text-slate-300 font-bold text-[9px] uppercase tracking-widest">
+            Protocol maintained by <span className="text-slate-900">Lance Ian E. Moquerio</span>
+          </p>
+        </div>
       </div>
     </div>
   );

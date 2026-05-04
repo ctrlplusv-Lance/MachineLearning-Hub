@@ -16,14 +16,13 @@ export default function AuthPage() {
     setMessage('');
     
     // Use a public base URL when available; otherwise use the current browser origin.
-    // For verification links, redirect back to your live auth page.
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://machinelearnhub.vercel.app';
 
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${baseUrl}/auth`,
+        emailRedirectTo: `${baseUrl}/auth/callback`,
       }
     });
 

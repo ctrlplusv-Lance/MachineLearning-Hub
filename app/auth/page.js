@@ -15,15 +15,15 @@ export default function AuthPage() {
     setLoading(true);
     setMessage('');
     
-    // Dynamically gets your current domain (localhost or machinelearnhub.vercel.app)
-    const baseUrl = window.location.origin;
+    // Use a public base URL when available; otherwise use the current browser origin.
+    // For verification links, redirect back to your live auth page.
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://machinelearnhub.vercel.app';
 
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // FIXED: Point this to your auth callback route for the handshake
-        emailRedirectTo: `${baseUrl}/auth/callback`,
+        emailRedirectTo: `${baseUrl}/auth`,
       }
     });
 

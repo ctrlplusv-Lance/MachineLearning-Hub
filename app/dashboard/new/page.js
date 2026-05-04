@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
@@ -7,8 +7,25 @@ export default function NewArticle() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [imageFile, setImageFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null); // For the visual preview
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Handle file selection and create a temporary preview URL
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImageFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
+
+  // Clean up the preview URL to avoid memory leaks
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -31,17 +48,18 @@ export default function NewArticle() {
       // 2. Handle Image Upload to Storage
       if (imageFile) {
         const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const fileName = `${Date.now()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`; // Organized by user ID
         
         const { error: uploadError } = await supabase.storage
           .from('article-images')
-          .upload(fileName, imageFile);
+          .upload(filePath, imageFile);
 
         if (uploadError) throw new Error("Image upload failed: " + uploadError.message);
 
         const { data: urlData } = supabase.storage
           .from('article-images')
-          .getPublicUrl(fileName);
+          .getPublicUrl(filePath);
         
         publicUrl = urlData.publicUrl;
       }
@@ -60,29 +78,25 @@ export default function NewArticle() {
 
       if (articleError) throw articleError;
 
-      // 4. Trigger Notifications (Double Insert)
+      // 4. Trigger Notifications
       const myUsername = user.user_metadata?.username || user.email?.split('@')[0] || 'User';
       
       const { error: notifError } = await supabase.from('notifications').insert([
-        // NOTIFICATION 1: For the public (Global)
         {
           user_id: null, 
           actor_usernames: [myUsername],
           article_id: newArticle.id,
           type: 'new_article'
         },
-        // NOTIFICATION 2: For the Author (Personalized Success Message)
         {
-          user_id: user.id, // Only visible to you
+          user_id: user.id, 
           actor_usernames: ['You'],
           article_id: newArticle.id,
-          type: 'author_success' // This matches the logic in your NotificationBell.js
+          type: 'author_success'
         }
       ]);
 
-      if (notifError) {
-        console.error("Notification Sync Error:", notifError);
-      }
+      if (notifError) console.error("Notification Sync Error:", notifError);
 
       router.push('/dashboard');
       router.refresh(); 
@@ -109,6 +123,7 @@ export default function NewArticle() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* TITLE INPUT */}
           <div>
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Article Title</label>
             <input 
@@ -121,17 +136,33 @@ export default function NewArticle() {
             />
           </div>
 
+          {/* IMAGE UPLOAD & PREVIEW */}
           <div>
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Cover Image</label>
-            <input 
-              type="file"
-              accept="image/*"
-              onChange={(e) => setImageFile(e.target.files[0])}
-              className="w-full p-2 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-600 hover:file:bg-blue-100 cursor-pointer"
-              disabled={loading}
-            />
+            
+            {!previewUrl ? (
+              <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-slate-200 rounded-3xl cursor-pointer hover:bg-slate-50 transition-all group">
+                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                  <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">📸</span>
+                  <p className="text-[10px] font-black text-slate-400 uppercase">Select a photo</p>
+                </div>
+                <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={loading} />
+              </label>
+            ) : (
+              <div className="relative group rounded-3xl overflow-hidden border border-slate-200">
+                <img src={previewUrl} alt="Preview" className="w-full h-64 object-cover" />
+                <button 
+                  type="button"
+                  onClick={() => { setImageFile(null); setPreviewUrl(null); }}
+                  className="absolute top-4 right-4 bg-white/90 backdrop-blur p-2 rounded-xl text-[10px] font-black text-red-500 shadow-xl hover:bg-red-50 transition-colors uppercase"
+                >
+                  Remove ×
+                </button>
+              </div>
+            )}
           </div>
 
+          {/* CONTENT TEXTAREA */}
           <div>
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Content</label>
             <textarea 
@@ -148,7 +179,7 @@ export default function NewArticle() {
             type="submit"
             disabled={loading}
             className={`w-full py-4 rounded-2xl font-black text-white transition-all shadow-lg active:scale-95 ${
-              loading ? 'bg-slate-300' : 'bg-blue-600 hover:bg-blue-700'
+              loading ? 'bg-slate-300 animate-pulse cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100'
             }`}
           >
             {loading ? "Publishing..." : "Publish Discovery"}

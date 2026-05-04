@@ -11,7 +11,6 @@ export default function CommentModal({ article, onClose, user }) {
   useEffect(() => {
     fetchComments();
 
-    // Realtime subscription updated to listen for ALL changes (INSERT and DELETE)
     const channel = supabase
       .channel(`comments-${article.id}`)
       .on('postgres_changes', { 
@@ -26,9 +25,10 @@ export default function CommentModal({ article, onClose, user }) {
   }, [article.id]);
 
   const fetchComments = async () => {
+    // UPDATED: Added avatar_url to the profile selection
     const { data } = await supabase
       .from('comments')
-      .select(`*, profiles(username)`)
+      .select(`*, profiles(username, avatar_url)`)
       .eq('article_id', article.id)
       .order('created_at', { ascending: true });
     setComments(data || []);
@@ -53,12 +53,11 @@ export default function CommentModal({ article, onClose, user }) {
     } else {
       setNewComment('');
       setReplyTo(null); 
-      fetchComments(); // Immediate refresh
+      fetchComments(); 
     }
     setSending(false);
   };
 
-  // NEW: Handle Delete Logic
   const handleDeleteComment = async (commentId) => {
     if (!confirm("Are you sure you want to remove this comment?")) return;
 
@@ -66,12 +65,12 @@ export default function CommentModal({ article, onClose, user }) {
       .from('comments')
       .delete()
       .eq('id', commentId)
-      .eq('user_id', user.id); // Ensure only the owner can delete
+      .eq('user_id', user.id);
 
     if (error) {
       alert("Error deleting comment: " + error.message);
     } else {
-      fetchComments(); // Refresh list after deletion
+      fetchComments();
     }
   };
 
@@ -79,78 +78,89 @@ export default function CommentModal({ article, onClose, user }) {
   const getReplies = (parentId) => comments.filter(c => c.parent_id === parentId);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-end md:items-center justify-center p-4">
-      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-end md:items-center justify-center p-0 md:p-4 transition-all">
+      <div className="bg-white w-full max-w-lg rounded-t-[2.5rem] md:rounded-[2.5rem] shadow-2xl overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-300 max-h-[90vh] flex flex-col">
+        
         {/* Header */}
-        <div className="p-6 border-b flex justify-between items-center bg-slate-50">
+        <div className="p-6 border-b flex justify-between items-center bg-white sticky top-0 z-10">
           <div>
-            <h3 className="font-bold text-slate-800">Discussion</h3>
-            <p className="text-xs text-slate-500 line-clamp-1">{article.title}</p>
+            <h3 className="font-black text-slate-900 tracking-tight">Discussion</h3>
+            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate max-w-[250px]">
+              {article.title}
+            </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition">✕</button>
+          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center hover:bg-slate-100 rounded-full text-slate-400 transition-colors">✕</button>
         </div>
         
         {/* Comments List */}
-        <div className="h-[400px] overflow-y-auto p-6 space-y-6 bg-white">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
           {rootComments.length === 0 && !sending && (
-            <p className="text-center text-slate-400 text-sm py-10">No comments yet. Start the conversation!</p>
+            <div className="text-center py-20">
+              <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">No signals yet</p>
+            </div>
           )}
           
           {rootComments.map((comment) => {
             const isOwner = user?.id === comment.user_id;
             return (
-              <div key={comment.id} className="space-y-4">
-                {/* Main Comment */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 relative group">
-                  <div className="flex justify-between items-start mb-1">
-                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-wider">
-                      @{comment.profiles?.username?.split('@')[0] || 'user'}
-                    </p>
-                    
-                    {/* Delete Button for Main Comment */}
-                    {isOwner && (
-                      <button 
-                        onClick={() => handleDeleteComment(comment.id)}
-                        className="text-slate-300 hover:text-red-500 transition-colors"
-                        title="Delete comment"
-                      >
-                        🗑️
-                      </button>
+              <div key={comment.id} className="space-y-3">
+                {/* Main Comment Row */}
+                <div className="flex gap-3 items-start group">
+                  {/* Avatar */}
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-white border border-slate-200 flex-shrink-0 shadow-sm">
+                    {comment.profiles?.avatar_url ? (
+                      <img src={comment.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[10px] opacity-30">👤</div>
                     )}
                   </div>
-                  
-                  <p className="text-sm text-slate-700 leading-relaxed">{comment.content}</p>
-                  
-                  <button 
-                    onClick={() => setReplyTo(comment)} 
-                    className="mt-2 text-[10px] font-bold text-slate-400 hover:text-blue-600 uppercase transition"
-                  >
-                    Reply
-                  </button>
+
+                  <div className="flex-1 bg-white p-4 rounded-2xl rounded-tl-none border border-slate-100 shadow-sm relative">
+                    <div className="flex justify-between items-start mb-1">
+                      <p className="text-[10px] font-black text-slate-900 uppercase tracking-tighter">
+                        @{comment.profiles?.username || 'anonymous'}
+                      </p>
+                      {isOwner && (
+                        <button onClick={() => handleDeleteComment(comment.id)} className="text-slate-300 hover:text-red-500 transition-colors">
+                          <span className="text-[10px]">🗑️</span>
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-600 font-medium leading-relaxed">{comment.content}</p>
+                    <button 
+                      onClick={() => setReplyTo(comment)} 
+                      className="mt-2 text-[9px] font-black text-blue-600 uppercase tracking-widest hover:underline transition"
+                    >
+                      Reply
+                    </button>
+                  </div>
                 </div>
 
                 {/* Nested Replies */}
                 {getReplies(comment.id).map(reply => {
                   const isReplyOwner = user?.id === reply.user_id;
                   return (
-                    <div key={reply.id} className="ml-8 bg-blue-50/40 p-3 rounded-2xl border-l-4 border-blue-200 relative">
-                       <div className="flex justify-between items-start mb-1">
-                         <p className="text-[10px] font-black text-blue-400 uppercase tracking-wider">
-                           @{reply.profiles?.username?.split('@')[0] || 'user'}
-                         </p>
-                         
-                         {/* Delete Button for Reply */}
-                         {isReplyOwner && (
-                           <button 
-                             onClick={() => handleDeleteComment(reply.id)}
-                             className="text-slate-300 hover:text-red-500 transition-colors scale-75"
-                             title="Delete reply"
-                           >
-                             🗑️
-                           </button>
-                         )}
-                       </div>
-                       <p className="text-sm text-slate-700">{reply.content}</p>
+                    <div key={reply.id} className="ml-11 flex gap-2 items-start">
+                      <div className="w-6 h-6 rounded-full overflow-hidden bg-white border border-slate-200 flex-shrink-0">
+                        {reply.profiles?.avatar_url ? (
+                          <img src={reply.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[8px] opacity-30">👤</div>
+                        )}
+                      </div>
+                      <div className="flex-1 bg-blue-50/50 p-3 rounded-xl rounded-tl-none border border-blue-100">
+                        <div className="flex justify-between items-start">
+                          <p className="text-[9px] font-black text-blue-600 uppercase">
+                            @{reply.profiles?.username || 'anonymous'}
+                          </p>
+                          {isReplyOwner && (
+                            <button onClick={() => handleDeleteComment(reply.id)} className="text-blue-300 hover:text-red-500 transition-colors scale-75">
+                              🗑️
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-700 font-medium">{reply.content}</p>
+                      </div>
                     </div>
                   );
                 })}
@@ -160,30 +170,30 @@ export default function CommentModal({ article, onClose, user }) {
         </div>
 
         {/* Input Area */}
-        <div className="p-6 border-t bg-slate-50">
+        <div className="p-6 border-t bg-white pb-10 md:pb-6">
           {replyTo && (
-            <div className="mb-2 flex justify-between items-center bg-blue-100 px-3 py-1.5 rounded-lg border border-blue-200">
-              <span className="text-[10px] font-bold text-blue-700">
-                Replying to @{replyTo.profiles?.username?.split('@')[0]}
+            <div className="mb-3 flex justify-between items-center bg-blue-600 px-4 py-2 rounded-xl">
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">
+                Replying to @{replyTo.profiles?.username}
               </span>
-              <button onClick={() => setReplyTo(null)} className="text-blue-700 text-xs hover:bg-blue-200 rounded-full px-1">✕</button>
+              <button onClick={() => setReplyTo(null)} className="text-white hover:opacity-50 transition">✕</button>
             </div>
           )}
           <div className="flex gap-2">
             <input 
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder={replyTo ? "Write a reply..." : "Write a comment..."}
-              className="flex-1 bg-white border border-slate-200 rounded-full px-5 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 placeholder:text-slate-400 shadow-sm"
+              placeholder={replyTo ? "Type your reply..." : "Add to the discussion..."}
+              className="flex-1 bg-slate-100 border-none rounded-2xl px-5 py-4 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-600/20 text-slate-900 placeholder:text-slate-400"
             />
             <button 
               onClick={postComment} 
               disabled={sending || !newComment.trim()} 
-              className="bg-blue-600 text-white w-12 h-12 flex items-center justify-center rounded-full font-bold hover:bg-blue-700 disabled:bg-slate-300 transition-all active:scale-90 shadow-md"
+              className="bg-blue-600 text-white px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 disabled:bg-slate-200 transition-all active:scale-95 shadow-lg shadow-blue-200 flex items-center justify-center"
             >
               {sending ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              ) : '→'}
+              ) : 'Send'}
             </button>
           </div>
         </div>

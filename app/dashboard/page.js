@@ -92,6 +92,27 @@ export default function Dashboard() {
     loadData(user.id);
   };
 
+  // NATIVE SHARING LOGIC
+  const handleShare = async (article) => {
+    const shareUrl = `${window.location.origin}/dashboard/article/${article.id}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: article.title,
+          text: `Check out this discovery by @${article.profiles?.username || 'anonymous'}:`,
+          url: shareUrl,
+        });
+      } catch (err) {
+        console.log("User cancelled or share failed", err);
+      }
+    } else {
+      // Desktop Fallback
+      await navigator.clipboard.writeText(shareUrl);
+      alert("Link copied to clipboard! You can now paste it anywhere.");
+    }
+  };
+
   const formatTimestamp = (dateString) => {
     const date = new Date(dateString);
     return `${date.toLocaleDateString()} • ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
@@ -115,7 +136,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans pb-24 md:pb-0">
-      {/* NAVBAR: Fixed height & responsive padding */}
+      {/* NAVBAR */}
       <nav className="bg-white/80 backdrop-blur-md border-b p-3 md:p-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <h1 className="text-lg md:text-xl font-black text-slate-900 cursor-pointer tracking-tighter" onClick={() => router.push('/dashboard')}>
           Art<span className="text-blue-600">Hub</span>
@@ -134,15 +155,14 @@ export default function Dashboard() {
             </div>
           </Link>
 
-          {/* Desktop Only Button */}
           <button 
             onClick={() => router.push('/dashboard/new')} 
-            className="hidden sm:block bg-blue-600 text-white px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 shadow-lg shadow-blue-100"
+            className="hidden sm:block bg-blue-600 text-white px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all"
           >
             + Post
           </button>
           
-          <button onClick={async () => { await supabase.auth.signOut(); router.push('/'); }} className="text-slate-400 hover:text-red-500 text-xs font-black px-2">Logout</button>
+          <button onClick={async () => { await supabase.auth.signOut(); router.push('/'); }} className="text-slate-400 hover:text-red-500 text-xs font-black px-2 transition-colors">Logout</button>
         </div>
       </nav>
 
@@ -159,7 +179,6 @@ export default function Dashboard() {
         {/* FEED SECTION */}
         <section className="lg:col-span-2 space-y-6 md:space-y-8">
           
-          {/* Header & Search */}
           <div className="flex flex-col gap-4">
             <h2 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Recent Activity</h2>
             
@@ -201,16 +220,16 @@ export default function Dashboard() {
                       </div>
                     </div>
                     {user?.id === article.author_id && (
-                      <button onClick={() => handleDeleteArticle(article.id)} className="text-slate-300 hover:text-red-500 p-2">🗑️</button>
+                      <button onClick={() => handleDeleteArticle(article.id)} className="text-slate-300 hover:text-red-500 p-2 transition-colors">🗑️</button>
                     )}
                   </div>
 
                   {/* Post Content */}
                   <div className="cursor-pointer" onClick={() => router.push(`/dashboard/article/${article.id}`)}>
-                    <h3 className="text-lg md:text-xl font-black text-slate-800 mb-3 md:mb-4 leading-tight">{article.title}</h3>
+                    <h3 className="text-lg md:text-xl font-black text-slate-800 mb-3 md:mb-4 leading-tight group-hover:text-blue-600 transition-colors">{article.title}</h3>
                     {article.image_url && (
                       <div className="overflow-hidden rounded-2xl md:rounded-[2rem] mb-4 md:mb-5 aspect-video md:aspect-auto">
-                        <img src={article.image_url} className="w-full h-full md:h-96 object-cover transition-transform duration-700" alt="Post" />
+                        <img src={article.image_url} className="w-full h-full md:h-96 object-cover transition-transform duration-700 group-hover:scale-[1.02]" alt="Post" />
                       </div>
                     )}
                     <p className="text-slate-600 mb-6 leading-relaxed line-clamp-3 text-sm md:text-base font-medium">{article.content}</p>
@@ -219,16 +238,19 @@ export default function Dashboard() {
                   {/* Actions */}
                   <div className="flex items-center justify-between pt-4 md:pt-5 border-t border-slate-50">
                     <div className="flex gap-4 md:gap-5">
-                      <button onClick={() => handleReaction(article.id, 'like')} className={`flex items-center gap-1.5 text-xs font-black transition-all ${userReaction === 'like' ? 'text-blue-600' : 'text-slate-400 hover:text-blue-500'}`}>
+                      <button onClick={() => handleReaction(article.id, 'like')} className={`flex items-center gap-1.5 text-xs font-black transition-all active:scale-90 ${userReaction === 'like' ? 'text-blue-600' : 'text-slate-400 hover:text-blue-500'}`}>
                         🔥 <span>{article.like_count}</span>
                       </button>
-                      <button onClick={() => setActiveArticle(article)} className="text-slate-400 text-[10px] font-black uppercase tracking-widest hover:text-blue-600">💬 Comment</button>
+                      <button onClick={() => setActiveArticle(article)} className="text-slate-400 text-[10px] font-black uppercase tracking-widest hover:text-blue-600 transition-colors">💬 Comment</button>
                     </div>
-                    <button onClick={async () => {
-                      const url = `${window.location.origin}/dashboard/article/${article.id}`;
-                      await navigator.clipboard.writeText(url);
-                      alert("Link Copied!");
-                    }} className="p-2 bg-slate-50 rounded-xl hover:bg-blue-50 text-slate-400 hover:text-blue-600">🔗</button>
+                    {/* ENHANCED SHARE BUTTON */}
+                    <button 
+                      onClick={() => handleShare(article)} 
+                      className="p-2 bg-slate-50 rounded-xl hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-all flex items-center gap-1"
+                    >
+                      <span className="text-xs font-black uppercase hidden sm:inline">Share</span>
+                      <span>🔗</span>
+                    </button>
                   </div>
                 </article>
               );
@@ -236,7 +258,7 @@ export default function Dashboard() {
           )}
         </section>
 
-        {/* SIDEBAR: Hidden on Mobile & Tablets, shown on Large Screens */}
+        {/* SIDEBAR */}
         <aside className="hidden lg:block">
           <div className="bg-white p-8 rounded-[3rem] border border-slate-200 sticky top-28 shadow-sm">
             <h2 className="text-[10px] font-black mb-8 uppercase tracking-[0.2em] text-slate-400">Trending Now</h2>
@@ -251,7 +273,6 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-            
             <div className="mt-12 pt-8 border-t border-slate-50 text-center">
                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">© 2026 ArtHub v2.0</p>
             </div>

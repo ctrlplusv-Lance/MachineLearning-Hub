@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export default function CommentModal({ article, onClose, user }) {
@@ -8,33 +8,34 @@ export default function CommentModal({ article, onClose, user }) {
   const [sending, setSending] = useState(false);
   const [replyTo, setReplyTo] = useState(null);
 
-  useEffect(() => {
-    fetchComments();
-
-    const channel = supabase
-      .channel(`comments-${article.id}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'comments', 
-        filter: `article_id=eq.${article.id}` 
-      }, () => fetchComments())
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [article.id]);
-
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
+    if (!article?.id) return;
     const { data } = await supabase
       .from('comments')
       .select(`*, profiles(username, avatar_url)`)
       .eq('article_id', article.id)
       .order('created_at', { ascending: true });
     setComments(data || []);
-  };
+  }, [article?.id]);
+
+  useEffect(() => {
+    fetchComments();
+
+    const channel = supabase
+      .channel(`comments-${article?.id}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'comments', 
+        filter: `article_id=eq.${article?.id}` 
+      }, () => fetchComments())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [article?.id, fetchComments]);
 
   const postComment = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || !user) return;
     setSending(true);
     
     const { error } = await supabase
@@ -70,16 +71,17 @@ export default function CommentModal({ article, onClose, user }) {
   const rootComments = comments.filter(c => !c.parent_id);
   const getReplies = (parentId) => comments.filter(c => c.parent_id === parentId);
 
+  if (!article) return null;
+
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[100] flex items-end md:items-center justify-center p-0 md:p-6 transition-all">
       <div className="bg-white w-full max-w-xl rounded-t-[3rem] md:rounded-[3rem] shadow-[0_30px_100px_rgba(0,0,0,0.2)] overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-500 max-h-[92vh] flex flex-col border border-white/20">
         
-        {/* Editorial Header */}
         <div className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10">
           <div>
             <h3 className="text-lg font-black text-slate-900 tracking-tighter">Discussion Thread</h3>
             <p className="text-[9px] font-black text-blue-600 uppercase tracking-[0.2em] truncate max-w-[280px] opacity-70">
-              Regarding: {article.title}
+              Regarding: {article.title || 'Loading...'}
             </p>
           </div>
           <button 
@@ -90,7 +92,6 @@ export default function CommentModal({ article, onClose, user }) {
           </button>
         </div>
         
-        {/* Comments Scroll Area */}
         <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 bg-slate-50/30">
           {rootComments.length === 0 && !sending && (
             <div className="text-center py-24">
@@ -105,7 +106,6 @@ export default function CommentModal({ article, onClose, user }) {
 
             return (
               <div key={comment.id} className="space-y-4">
-                {/* Main Post Card style comment */}
                 <div className="flex gap-4 items-start group">
                   <div className="w-10 h-10 rounded-2xl overflow-hidden bg-white border border-slate-100 flex-shrink-0 shadow-sm">
                     {comment.profiles?.avatar_url ? (
@@ -148,7 +148,6 @@ export default function CommentModal({ article, onClose, user }) {
                   </div>
                 </div>
 
-                {/* Styled Replies */}
                 {replies.map(reply => {
                   const isReplyOwner = user?.id === reply.user_id;
                   return (
@@ -181,7 +180,6 @@ export default function CommentModal({ article, onClose, user }) {
           })}
         </div>
 
-        {/* Premium Input Area */}
         <div className="p-6 md:p-8 border-t border-slate-50 bg-white pb-12 md:pb-8">
           {replyTo && (
             <div className="mb-4 flex justify-between items-center bg-slate-900 px-5 py-2.5 rounded-2xl animate-in fade-in slide-in-from-bottom-2">

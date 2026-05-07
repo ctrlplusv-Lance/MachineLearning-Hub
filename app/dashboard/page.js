@@ -1,10 +1,12 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link'; 
-import CommentModal from '../components/CommentModal'; 
-import NotificationBell from '../components/NotificationBell';
+import CommentModal from '@/app/components/CommentModal'; 
+import NotificationBell from '@/app/components/NotificationBell';
+
+const PAGE_SIZE = 5;
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
@@ -13,273 +15,200 @@ export default function Dashboard() {
   const [topArticles, setTopArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeArticle, setActiveArticle] = useState(null); 
-  const [searchQuery, setSearchQuery] = useState(''); 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+
   const router = useRouter();
 
-  const loadData = async (userId) => {
+  const getRelativeTime = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMs = now - date;
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    if (diffInDays === 0) return "Today";
+    if (diffInDays === 1) return "Yesterday";
+    if (diffInDays < 7) return `${diffInDays} days ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const loadData = useCallback(async (userId, page = 0) => {
     try {
-      const { data: articleData, error: articleError } = await supabase
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      const { data: articleData, error: articleError, count } = await supabase
         .from('articles')
-        .select('*, profiles (username, avatar_url), reactions (reaction_type, user_id)')
-        .order('created_at', { ascending: false });
+        .select('*, profiles (username, avatar_url), reactions (reaction_type, user_id)', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(from, to);
 
       if (articleError) throw articleError;
 
       const formattedArticles = articleData.map(article => ({
         ...article,
         like_count: article.reactions?.filter(r => r.reaction_type === 'like').length || 0,
-        dislike_count: article.reactions?.filter(r => r.reaction_type === 'dislike').length || 0
       }));
-      setArticles(formattedArticles);
 
-      const { data: topData } = await supabase.from('top_articles').select('*');
-      setTopArticles(topData || []);
+      setArticles(formattedArticles);
+      setTotalCount(count || 0);
+
+      const { data: topData } = await supabase.from('articles').select('*, reactions(reaction_type)').limit(5);
+      const sortedTop = (topData || [])
+        .map(a => ({ ...a, like_count: a.reactions?.filter(r => r.reaction_type === 'like').length || 0 }))
+        .sort((a, b) => b.like_count - a.like_count);
+      setTopArticles(sortedTop);
 
       if (userId) {
-        const { data: pData } = await supabase
-          .from('profiles')
-          .select('username, avatar_url')
-          .eq('id', userId)
-          .single();
+        const { data: pData } = await supabase.from('profiles').select('username, avatar_url').eq('id', userId).single();
         setUserProfile(pData);
       }
     } catch (err) {
       console.error("Sync Error:", err.message);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const setup = async () => {
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) { 
-        router.push('/auth'); 
-        return; 
-      }
+      if (!authUser) { router.push('/auth'); return; }
       setUser(authUser);
-      await loadData(authUser.id);
+      await loadData(authUser.id, currentPage);
       setLoading(false);
     };
     setup();
 
     const channel = supabase.channel('realtime-hub')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reactions' }, () => loadData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'articles' }, () => loadData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => loadData()) 
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reactions' }, () => loadData(user?.id, currentPage))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'articles' }, () => loadData(user?.id, currentPage))
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [router]);
+  }, [router, currentPage, user?.id, loadData]);
 
   const filteredArticles = articles.filter(article => 
     article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     article.content.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleReaction = async (articleId, type) => {
+  const handleReaction = async (articleId) => {
     if (!user) return;
     const article = articles.find(a => a.id === articleId);
-    const current = article?.reactions?.find(r => r.user_id === user?.id)?.reaction_type;
+    const hasLiked = article?.reactions?.find(r => r.user_id === user?.id && r.reaction_type === 'like');
     
-    if (current === type) {
-      await supabase.from('reactions').delete().match({ user_id: user.id, article_id: articleId });
+    if (hasLiked) {
+      await supabase.from('reactions').delete().match({ user_id: user.id, article_id: articleId, reaction_type: 'like' });
     } else {
-      await supabase.from('reactions').upsert({ 
-        user_id: user.id, 
-        article_id: articleId, 
-        reaction_type: type 
-      }, { onConflict: 'user_id, article_id' });
+      await supabase.from('reactions').upsert({ user_id: user.id, article_id: articleId, reaction_type: 'like' }, { onConflict: 'user_id, article_id' });
     }
-    loadData(user.id);
-  };
-
-  const handleShare = async (article) => {
-    const shareUrl = `${window.location.origin}/dashboard/article/${article.id}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: article.title,
-          text: `Check out this discovery by @${article.profiles?.username || 'anonymous'}:`,
-          url: shareUrl,
-        });
-      } catch (err) { console.log("Share failed", err); }
-    } else {
-      await navigator.clipboard.writeText(shareUrl);
-      alert("Link copied to clipboard! ✨");
-    }
-  };
-
-  const handleDeleteArticle = async (articleId) => {
-    if (!confirm("Delete this discovery?")) return;
-    const { error } = await supabase.from('articles').delete().eq('id', articleId);
-    if (error) alert("Error: " + error.message);
-    else loadData(user.id);
+    loadData(user.id, currentPage);
   };
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="text-center">
-        <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-        <p className="text-blue-900 font-black uppercase text-[9px] tracking-[0.3em]">Syncing Hub</p>
-      </div>
+      <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-24 lg:pb-10">
-      {/* PREMIUM NAVBAR */}
-      <nav className="bg-white/80 backdrop-blur-xl border-b border-slate-100 p-4 sticky top-0 z-50 shadow-sm transition-all">
+    <div className="min-h-screen bg-[#f8fafc] font-sans pb-24">
+      <nav className="bg-white/80 backdrop-blur-xl border-b border-slate-100 p-4 sticky top-0 z-50 shadow-sm">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <h1 className="text-xl font-black text-slate-900 cursor-pointer tracking-tighter" onClick={() => router.push('/dashboard')}>
-            Art<span className="text-blue-600">Hub</span>
-          </h1>
-          
+          <h1 className="text-xl font-black text-slate-900 tracking-tighter">Art<span className="text-blue-600">Hub</span></h1>
           <div className="flex items-center gap-4">
             <NotificationBell user={user} />
-            
-            <Link href="/dashboard/profile" className="w-9 h-9 rounded-2xl overflow-hidden border-2 border-white shadow-md hover:scale-110 transition-transform">
-              {userProfile?.avatar_url ? (
-                <img src={userProfile.avatar_url} className="w-full h-full object-cover" alt="Profile" />
-              ) : (
-                <div className="w-full h-full bg-blue-50 flex items-center justify-center text-xs">👤</div>
-              )}
+            <Link href="/dashboard/profile" className="w-9 h-9 rounded-2xl overflow-hidden border-2 border-white shadow-md">
+              <img src={userProfile?.avatar_url || `https://ui-avatars.com/api/?name=${userProfile?.username || 'U'}`} className="w-full h-full object-cover" alt="P" />
             </Link>
-
-            <button 
-              onClick={() => router.push('/dashboard/new')} 
-              className="hidden md:block bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-200 transition-all active:scale-95"
-            >
-              + Post Discovery
-            </button>
-            
-            <button onClick={async () => { await supabase.auth.signOut(); router.push('/'); }} className="text-slate-400 hover:text-red-500 text-[10px] font-black uppercase tracking-widest transition-colors ml-2">Logout</button>
+            <button onClick={() => supabase.auth.signOut().then(() => router.push('/'))} className="text-[9px] font-black uppercase text-slate-400 ml-2">Logout</button>
           </div>
         </div>
       </nav>
 
-      {/* MOBILE FAB */}
-      <button 
-        onClick={() => router.push('/dashboard/new')}
-        className="md:hidden fixed bottom-8 right-8 z-50 bg-gradient-to-br from-blue-600 to-indigo-700 text-white w-16 h-16 rounded-[2rem] shadow-2xl shadow-blue-400 flex items-center justify-center text-3xl transition-transform active:scale-90"
-      >
-        +
-      </button>
-
-      <main className="max-w-6xl mx-auto p-4 md:p-8 lg:p-10 grid grid-cols-1 lg:grid-cols-3 gap-10">
-        
-        {/* FEED */}
-        <section className="lg:col-span-2 space-y-8 md:space-y-12">
-          
-          <div className="flex flex-col gap-6">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Recent Signals</h2>
-            <div className="relative group w-full">
+      <main className="max-w-6xl mx-auto p-4 md:p-10 grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <section className="lg:col-span-2 space-y-10">
+          <div className="flex flex-col sm:flex-row gap-4 items-center">
+            <div className="relative group flex-1 w-full">
               <input 
                 type="text"
-                placeholder="Search keywords..."
+                placeholder="Search ArtHub..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white border border-slate-100 py-4 px-14 rounded-3xl text-sm font-bold focus:ring-8 focus:ring-blue-500/5 focus:border-blue-200 outline-none transition-all shadow-sm"
+                className="w-full bg-white border border-slate-100 py-5 px-14 rounded-[2rem] text-sm font-bold focus:ring-8 focus:ring-blue-500/5 outline-none shadow-sm shadow-slate-200/50"
               />
-              <span className="absolute left-6 top-1/2 -translate-y-1/2 text-lg grayscale group-focus-within:grayscale-0 transition-all">🔍</span>
+              <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">🔍</span>
             </div>
+            
+            <Link 
+              href="/dashboard/publish" 
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-100 transition-all active:scale-95 whitespace-nowrap"
+            >
+              + Publish Signal
+            </Link>
           </div>
           
           {filteredArticles.map((article) => {
-            const userReaction = article.reactions?.find(r => r.user_id === user?.id)?.reaction_type;
+            const hasLiked = article.reactions?.find(r => r.user_id === user?.id && r.reaction_type === 'like');
             return (
-              <article key={article.id} className="group bg-white p-6 md:p-8 rounded-[2.5rem] border border-slate-100 transition-all duration-500 hover:shadow-[0_20px_50px_rgba(15,23,42,0.06)] hover:-translate-y-1">
-                
-                {/* Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-11 h-11 rounded-2xl overflow-hidden bg-slate-50 border border-slate-100 shadow-sm">
-                      {article.profiles?.avatar_url ? (
-                        <img src={article.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-blue-600 font-black bg-blue-50 text-xs">
-                          {article.profiles?.username?.charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">@{article.profiles?.username || 'anonymous'}</p>
-                      <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
-                        {new Date(article.created_at).toLocaleDateString()} • {new Date(article.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                      </p>
-                    </div>
+              <article key={article.id} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 transition-all hover:shadow-2xl">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-11 h-11 rounded-2xl overflow-hidden bg-slate-50 border border-slate-100">
+                    <img src={article.profiles?.avatar_url || `https://ui-avatars.com/api/?name=${article.profiles?.username}`} className="w-full h-full object-cover" alt="" />
                   </div>
-                  {user?.id === article.author_id && (
-                    <button onClick={() => handleDeleteArticle(article.id)} className="text-slate-200 hover:text-red-500 transition-colors p-2 text-sm">🗑️</button>
-                  )}
+                  <div>
+                    <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">@{article.profiles?.username}</p>
+                    <p className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">{getRelativeTime(article.created_at)}</p>
+                  </div>
                 </div>
 
-                {/* Content */}
-                <div className="cursor-pointer mb-8" onClick={() => router.push(`/dashboard/article/${article.id}`)}>
-                  <h3 className="text-2xl md:text-3xl font-black text-slate-900 mb-4 leading-tight tracking-tight group-hover:text-blue-600 transition-colors">
-                    {article.title}
-                  </h3>
+                <Link href={`/dashboard/article/${article.id}`} className="block group">
+                  <h3 className="text-3xl font-black text-slate-900 mb-6 leading-tight group-hover:text-blue-600 transition-colors tracking-tight">{article.title}</h3>
                   {article.image_url && (
-                    <div className="relative overflow-hidden rounded-[2.5rem] mb-6 shadow-inner bg-slate-50 border border-slate-50">
-                      <img src={article.image_url} className="w-full h-auto md:max-h-[500px] object-cover transition-transform duration-1000 group-hover:scale-[1.03]" alt="Visual" />
+                    <div className="rounded-[2.5rem] overflow-hidden mb-6 border border-slate-50 shadow-inner">
+                      <img src={article.image_url} className="w-full h-auto object-cover max-h-96" alt="" />
                     </div>
                   )}
-                  <p className="text-slate-600 leading-relaxed line-clamp-3 font-medium text-base md:text-lg opacity-80 group-hover:opacity-100 transition-opacity">
-                    {article.content}
-                  </p>
-                </div>
+                  <p className="text-slate-500 line-clamp-2 font-medium mb-8 leading-relaxed opacity-80">{article.content}</p>
+                </Link>
 
-                {/* Actions */}
                 <div className="flex items-center justify-between pt-6 border-t border-slate-50">
                   <div className="flex gap-3">
-                    <button 
-                      onClick={() => handleReaction(article.id, 'like')} 
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-90 ${userReaction === 'like' ? 'bg-orange-600 text-white shadow-lg shadow-orange-100' : 'bg-slate-50 text-slate-400 hover:bg-orange-50 hover:text-orange-600'}`}
-                    >
-                      🔥 {article.like_count}
+                    <button onClick={() => handleReaction(article.id)} className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${hasLiked ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-slate-50 text-slate-400 hover:bg-blue-50'}`}>
+                      🔥 {article.like_count} Agree
                     </button>
-                    <button 
-                      onClick={() => setActiveArticle(article)} 
-                      className="bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
-                    >
-                      💬 Discuss
-                    </button>
+                    <button onClick={() => setActiveArticle(article)} className="bg-slate-50 text-slate-400 hover:bg-blue-50 px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all">💬 Discuss</button>
                   </div>
-                  <button 
-                    onClick={() => handleShare(article)} 
-                    className="w-11 h-11 flex items-center justify-center bg-slate-50 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-white transition-all shadow-sm"
-                  >
-                    🔗
-                  </button>
                 </div>
               </article>
             );
           })}
+
+          <div className="flex items-center justify-center gap-2 py-10">
+            {[...Array(Math.ceil(totalCount / PAGE_SIZE))].map((_, i) => (
+              <button key={i} onClick={() => setCurrentPage(i)} className={`w-10 h-10 rounded-xl font-black text-[11px] transition-all ${currentPage === i ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-white text-slate-400 border border-slate-100 hover:border-blue-200'}`}>
+                {i + 1}
+              </button>
+            ))}
+          </div>
         </section>
 
-        {/* SIDEBAR */}
         <aside className="hidden lg:block">
-          <div className="bg-white/70 backdrop-blur-md p-8 rounded-[3rem] border border-white/50 sticky top-28 shadow-xl shadow-slate-200/50">
-            <h2 className="text-[10px] font-black mb-10 uppercase tracking-[0.25em] text-slate-400 flex items-center gap-2">
-              <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span>
-              Trending Discoveries
-            </h2>
+          <div className="bg-white p-10 rounded-[3rem] border border-slate-100 sticky top-28 shadow-xl shadow-slate-200/50">
+            <h2 className="text-[10px] font-black mb-10 uppercase tracking-[0.2em] text-slate-300">Trending Discoveries</h2>
             <div className="space-y-10">
               {topArticles.map((item, index) => (
-                <div key={item.id} className="flex items-start gap-5 cursor-pointer group" onClick={() => router.push(`/dashboard/article/${item.id}`)}>
-                  <span className="text-slate-100 font-black text-4xl leading-none transition-colors group-hover:text-blue-100">{(index + 1).toString().padStart(2, '0')}</span>
+                <Link key={item.id} href={`/dashboard/article/${item.id}`} className="flex items-start gap-5 group">
+                  <span className="text-slate-100 font-black text-4xl leading-none group-hover:text-blue-100">{(index + 1).toString().padStart(2, '0')}</span>
                   <div>
-                    <p className="text-sm font-black text-slate-800 group-hover:text-blue-600 transition-colors line-clamp-2 leading-tight mb-2 uppercase tracking-tight">{item.title}</p>
-                    <span className="text-[9px] bg-slate-50 text-slate-400 px-2 py-1 rounded-md font-black uppercase tracking-widest">{item.like_count} agrees</span>
+                    <p className="text-sm font-black text-slate-800 group-hover:text-blue-600 line-clamp-2 leading-tight uppercase tracking-tight">{item.title}</p>
+                    <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest">{item.like_count} agrees</span>
                   </div>
-                </div>
+                </Link>
               ))}
-            </div>
-            <div className="mt-14 pt-8 border-t border-slate-100/50 text-center">
-               <p className="text-[9px] font-black text-slate-200 uppercase tracking-[0.3em]">© 2026 ArtHub Platform</p>
             </div>
           </div>
         </aside>
       </main>
-      
       {activeArticle && <CommentModal article={activeArticle} user={user} onClose={() => setActiveArticle(null)} />}
     </div>
   );

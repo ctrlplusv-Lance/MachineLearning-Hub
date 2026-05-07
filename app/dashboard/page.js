@@ -21,20 +21,15 @@ export default function Dashboard() {
 
   const router = useRouter();
 
-  // Helper to format Date (e.g., Oct 24, 2023)
   const getFormattedDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
+      month: 'short', day: 'numeric', year: 'numeric',
     });
   };
 
-  // Helper to format Time (e.g., 02:30 PM)
   const getFormattedTime = (dateString) => {
     return new Date(dateString).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
+      hour: '2-digit', minute: '2-digit',
     });
   };
 
@@ -43,6 +38,7 @@ export default function Dashboard() {
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
 
+      // 1. Fetch Feed Articles
       const { data: articleData, error: articleError, count } = await supabase
         .from('articles')
         .select('*, profiles (username, avatar_url), reactions (reaction_type, user_id)', { count: 'exact' })
@@ -59,11 +55,20 @@ export default function Dashboard() {
       setArticles(formattedArticles);
       setTotalCount(count || 0);
 
-      const { data: topData } = await supabase.from('articles').select('*, reactions(reaction_type)').limit(5);
-      const sortedTop = (topData || [])
-        .map(a => ({ ...a, like_count: a.reactions?.filter(r => r.reaction_type === 'like').length || 0 }))
-        .sort((a, b) => b.like_count - a.like_count);
-      setTopArticles(sortedTop);
+      // 2. FETCH & SORT TRENDING (Global)
+      const { data: trendingData } = await supabase
+        .from('articles')
+        .select('*, reactions(reaction_type)');
+      
+      const sortedTrending = (trendingData || [])
+        .map(a => ({ 
+          ...a, 
+          like_count: a.reactions?.filter(r => r.reaction_type === 'like').length || 0 
+        }))
+        .sort((a, b) => b.like_count - a.like_count)
+        .slice(0, 5);
+
+      setTopArticles(sortedTrending);
 
       if (userId) {
         const { data: pData } = await supabase.from('profiles').select('username, avatar_url').eq('id', userId).single();
@@ -94,15 +99,43 @@ export default function Dashboard() {
 
   const handleReaction = async (articleId) => {
     if (!user) return;
+
+    // --- OPTIMISTIC UI UPDATE ---
+    // This function calculates the new state instantly
+    const getUpdatedList = (prevList) => prevList.map(article => {
+      if (article.id === articleId) {
+        const hasLiked = article.reactions?.some(r => r.user_id === user.id && r.reaction_type === 'like');
+        const newReactions = hasLiked 
+          ? article.reactions.filter(r => r.user_id !== user.id) 
+          : [...(article.reactions || []), { user_id: user.id, reaction_type: 'like' }];
+
+        return {
+          ...article,
+          reactions: newReactions,
+          like_count: newReactions.filter(r => r.reaction_type === 'like').length
+        };
+      }
+      return article;
+    });
+
+    // Update Feed instantly
+    setArticles(prev => getUpdatedList(prev));
+
+    // Update Trending instantly & Re-sort
+    setTopArticles(prev => {
+      const updated = getUpdatedList(prev);
+      return [...updated].sort((a, b) => b.like_count - a.like_count);
+    });
+
+    // --- DATABASE SYNC ---
     const article = articles.find(a => a.id === articleId);
-    const hasLiked = article?.reactions?.find(r => r.user_id === user?.id && r.reaction_type === 'like');
+    const alreadyLiked = article?.reactions?.find(r => r.user_id === user?.id && r.reaction_type === 'like');
     
-    if (hasLiked) {
+    if (alreadyLiked) {
       await supabase.from('reactions').delete().match({ user_id: user.id, article_id: articleId, reaction_type: 'like' });
     } else {
       await supabase.from('reactions').upsert({ user_id: user.id, article_id: articleId, reaction_type: 'like' }, { onConflict: 'user_id, article_id' });
     }
-    loadData(user.id, currentPage);
   };
 
   const handleShare = async (article) => {
@@ -111,13 +144,8 @@ export default function Dashboard() {
       text: `Check out this discovery: ${article.title}`,
       url: `${window.location.origin}/dashboard/article/${article.id}`,
     };
-
     if (navigator.share) {
-      try {
-        await navigator.share(shareData);
-      } catch (err) {
-        console.log('Share cancelled');
-      }
+      try { await navigator.share(shareData); } catch (err) { console.log('Share cancelled'); }
     } else {
       navigator.clipboard.writeText(shareData.url);
       alert("Link copied to clipboard!");
@@ -127,11 +155,8 @@ export default function Dashboard() {
   const handleDelete = async (articleId) => {
     if (!confirm("Are you sure you want to delete this signal?")) return;
     const { error } = await supabase.from('articles').delete().eq('id', articleId);
-    if (error) {
-      alert("Error: " + error.message);
-    } else {
-      loadData(user?.id, currentPage);
-    }
+    if (error) alert("Error: " + error.message);
+    else loadData(user?.id, currentPage);
   };
 
   const filteredArticles = articles.filter(article => 
@@ -173,18 +198,13 @@ export default function Dashboard() {
               />
               <span className="absolute left-6 top-1/2 -translate-y-1/2 opacity-30">🔍</span>
             </div>
-            
-            <Link 
-              href="/dashboard/publish" 
-              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-100 transition-all active:scale-95 whitespace-nowrap"
-            >
-              + Publish Signal
-            </Link>
+            <Link href="/dashboard/publish" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-5 rounded-[2rem] font-black text-[10px] uppercase tracking-widest shadow-xl shadow-blue-100 transition-all active:scale-95 whitespace-nowrap">+ Publish Signal</Link>
           </div>
           
           {filteredArticles.map((article) => {
             const hasLiked = article.reactions?.find(r => r.user_id === user?.id && r.reaction_type === 'like');
-            const isAuthor = user?.id === article.user_id;
+            // Using author_id to match your schema dot
+            const isAuthor = user?.id === article.author_id;
 
             return (
               <article key={article.id} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 transition-all hover:shadow-2xl relative">
@@ -195,21 +215,11 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">@{article.profiles?.username}</p>
-                      {/* FIXED TIMESTAMP: Full Date and Time */}
-                      <p className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">
-                        {getFormattedDate(article.created_at)} • {getFormattedTime(article.created_at)}
-                      </p>
+                      <p className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">{getFormattedDate(article.created_at)} • {getFormattedTime(article.created_at)}</p>
                     </div>
                   </div>
-
                   {isAuthor && (
-                    <button 
-                      onClick={() => handleDelete(article.id)}
-                      className="p-3 bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 rounded-2xl transition-all shadow-sm"
-                      title="Delete Signal"
-                    >
-                      🗑
-                    </button>
+                    <button onClick={() => handleDelete(article.id)} className="p-3 bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 rounded-2xl transition-all shadow-sm">🗑</button>
                   )}
                 </div>
 
@@ -228,16 +238,8 @@ export default function Dashboard() {
                     <button onClick={() => handleReaction(article.id)} className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${hasLiked ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-slate-50 text-slate-400 hover:bg-blue-50'}`}>
                       🔥 {article.like_count} Agree
                     </button>
-                    
-                    <button 
-                      onClick={() => handleShare(article)} 
-                      className="bg-slate-50 text-slate-400 hover:bg-blue-50 px-4 py-3 rounded-2xl transition-all"
-                      title="Share Signal"
-                    >
-                      ↗
-                    </button>
+                    <button onClick={() => handleShare(article)} className="bg-slate-50 text-slate-400 hover:bg-blue-50 px-4 py-3 rounded-2xl transition-all">↗</button>
                   </div>
-                  
                   <button onClick={() => setActiveArticle(article)} className="bg-slate-900 text-white hover:bg-blue-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all shadow-lg shadow-slate-200">💬 Discuss</button>
                 </div>
               </article>

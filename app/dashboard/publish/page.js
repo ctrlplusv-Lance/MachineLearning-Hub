@@ -54,7 +54,7 @@ export default function NewArticle() {
         const { error: uploadError } = await supabase.storage
           .from('article-images')
           .upload(filePath, imageFile, {
-            contentType: imageFile.type, // Explicitly set content type
+            contentType: imageFile.type,
             upsert: true
           });
 
@@ -68,13 +68,13 @@ export default function NewArticle() {
       }
 
       // 3. Insert Article into 'articles' table
-      // Changed author_id to user_id to match your schema
+      // FIXED: Using 'author_id' instead of 'user_id' to match your DB schema dot
       const { data: newArticle, error: articleError } = await supabase
         .from('articles')
         .insert([{ 
           title: title.trim(), 
           content: content.trim(), 
-          user_id: user.id, 
+          author_id: user.id, // Target column from your schema
           image_url: publicUrl 
         }])
         .select()
@@ -83,11 +83,9 @@ export default function NewArticle() {
       if (articleError) throw articleError;
 
       // 4. Trigger Notifications
-      const myUsername = user.user_metadata?.username || user.email?.split('@')[0] || 'User';
-      
       const { error: notifError } = await supabase.from('notifications').insert([
         {
-          user_id: user.id, // Target the author for the success message
+          user_id: user.id,
           actor_usernames: ['You'],
           article_id: newArticle.id,
           type: 'author_success'

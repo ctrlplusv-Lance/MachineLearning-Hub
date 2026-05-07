@@ -84,6 +84,41 @@ export default function ArticleDetail() {
     fetchArticle(user.id);
   };
 
+  // MULTI-PLATFORM SHARE
+  const handleShare = async () => {
+    const shareData = {
+      title: article.title,
+      text: `Check out this discovery: ${article.title}`,
+      url: window.location.href,
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.log('Share cancelled');
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert("Link copied to clipboard (Platform share not supported on this browser)");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to delete this signal? This action is permanent.")) return;
+    
+    const { error } = await supabase
+      .from('articles')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert("Error deleting: " + error.message);
+    } else {
+      router.push('/dashboard');
+    }
+  };
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
       <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -93,6 +128,17 @@ export default function ArticleDetail() {
   if (!article) return null;
 
   const hasLiked = article.reactions?.find(r => r.user_id === user?.id && r.reaction_type === 'like');
+  
+  // VERIFY AUTHORSHIP
+  const isAuthor = user?.id === article.user_id;
+
+  // FORMAT TIMESTAMP (Full date and time)
+  const formattedDate = new Date(article.created_at).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric'
+  });
+  const formattedTime = new Date(article.created_at).toLocaleTimeString('en-US', {
+    hour: '2-digit', minute: '2-digit'
+  });
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans pb-24">
@@ -111,9 +157,21 @@ export default function ArticleDetail() {
       </nav>
 
       <main className="max-w-4xl mx-auto p-4 md:p-10">
-        <Link href="/dashboard" className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-600 mb-10 transition-colors">
-          ← Back to Discoveries
-        </Link>
+        <div className="flex justify-between items-center mb-10">
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-600 transition-colors">
+            ← Back to Discoveries
+          </Link>
+
+          {/* RESTORED DELETE BUTTON */}
+          {isAuthor && (
+            <button 
+              onClick={handleDelete}
+              className="text-[10px] font-black uppercase tracking-widest text-red-400 hover:text-red-600 transition-colors bg-red-50 px-4 py-2 rounded-xl"
+            >
+              🗑 Delete Signal
+            </button>
+          )}
+        </div>
 
         <article className="bg-white p-8 md:p-12 rounded-[3.5rem] border border-slate-100 shadow-xl shadow-slate-200/50">
           <div className="flex items-center gap-4 mb-10">
@@ -122,7 +180,10 @@ export default function ArticleDetail() {
             </div>
             <div>
               <p className="text-[12px] font-black text-slate-900 uppercase tracking-tight">@{article.profiles?.username}</p>
-              <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Published Discovery</p>
+              {/* RESTORED FULL TIMESTAMP */}
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                {formattedDate} • {formattedTime}
+              </p>
             </div>
           </div>
 
@@ -140,7 +201,7 @@ export default function ArticleDetail() {
             {article.content}
           </div>
 
-          <div className="flex items-center gap-4 pt-10 border-t border-slate-50">
+          <div className="flex flex-wrap items-center gap-4 pt-10 border-t border-slate-50">
             <button 
               onClick={handleReaction} 
               className={`flex items-center gap-2 px-8 py-4 rounded-2xl text-[11px] font-black uppercase transition-all ${hasLiked ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-slate-50 text-slate-400 hover:bg-blue-50'}`}
@@ -152,6 +213,14 @@ export default function ArticleDetail() {
               className="bg-slate-900 text-white px-8 py-4 rounded-2xl text-[11px] font-black uppercase transition-all hover:bg-blue-600 shadow-xl shadow-slate-200"
             >
               💬 Open Discussion
+            </button>
+            
+            {/* PLATFORM SHARE BUTTON */}
+            <button 
+              onClick={handleShare}
+              className="flex-1 md:flex-none border border-slate-100 text-slate-500 px-8 py-4 rounded-2xl text-[11px] font-black uppercase transition-all hover:bg-slate-50 flex items-center justify-center gap-2"
+            >
+              ↗ Share Signal
             </button>
           </div>
         </article>

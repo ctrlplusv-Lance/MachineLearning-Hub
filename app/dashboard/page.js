@@ -21,15 +21,21 @@ export default function Dashboard() {
 
   const router = useRouter();
 
-  const getRelativeTime = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInMs = now - date;
-    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-    if (diffInDays === 0) return "Today";
-    if (diffInDays === 1) return "Yesterday";
-    if (diffInDays < 7) return `${diffInDays} days ago`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  // Helper to format Date (e.g., Oct 24, 2023)
+  const getFormattedDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  // Helper to format Time (e.g., 02:30 PM)
+  const getFormattedTime = (dateString) => {
+    return new Date(dateString).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   const loadData = useCallback(async (userId, page = 0) => {
@@ -86,11 +92,6 @@ export default function Dashboard() {
     return () => { supabase.removeChannel(channel); };
   }, [router, currentPage, user?.id, loadData]);
 
-  const filteredArticles = articles.filter(article => 
-    article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    article.content.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   const handleReaction = async (articleId) => {
     if (!user) return;
     const article = articles.find(a => a.id === articleId);
@@ -103,6 +104,40 @@ export default function Dashboard() {
     }
     loadData(user.id, currentPage);
   };
+
+  const handleShare = async (article) => {
+    const shareData = {
+      title: article.title,
+      text: `Check out this discovery: ${article.title}`,
+      url: `${window.location.origin}/dashboard/article/${article.id}`,
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (err) {
+        console.log('Share cancelled');
+      }
+    } else {
+      navigator.clipboard.writeText(shareData.url);
+      alert("Link copied to clipboard!");
+    }
+  };
+
+  const handleDelete = async (articleId) => {
+    if (!confirm("Are you sure you want to delete this signal?")) return;
+    const { error } = await supabase.from('articles').delete().eq('id', articleId);
+    if (error) {
+      alert("Error: " + error.message);
+    } else {
+      loadData(user?.id, currentPage);
+    }
+  };
+
+  const filteredArticles = articles.filter(article => 
+    article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    article.content.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -149,16 +184,33 @@ export default function Dashboard() {
           
           {filteredArticles.map((article) => {
             const hasLiked = article.reactions?.find(r => r.user_id === user?.id && r.reaction_type === 'like');
+            const isAuthor = user?.id === article.user_id;
+
             return (
-              <article key={article.id} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 transition-all hover:shadow-2xl">
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="w-11 h-11 rounded-2xl overflow-hidden bg-slate-50 border border-slate-100">
-                    <img src={article.profiles?.avatar_url || `https://ui-avatars.com/api/?name=${article.profiles?.username}`} className="w-full h-full object-cover" alt="" />
+              <article key={article.id} className="bg-white p-8 rounded-[3.5rem] border border-slate-100 transition-all hover:shadow-2xl relative">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-2xl overflow-hidden bg-slate-50 border border-slate-100">
+                      <img src={article.profiles?.avatar_url || `https://ui-avatars.com/api/?name=${article.profiles?.username}`} className="w-full h-full object-cover" alt="" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">@{article.profiles?.username}</p>
+                      {/* FIXED TIMESTAMP: Full Date and Time */}
+                      <p className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">
+                        {getFormattedDate(article.created_at)} • {getFormattedTime(article.created_at)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">@{article.profiles?.username}</p>
-                    <p className="text-[9px] font-bold text-blue-500 uppercase tracking-widest">{getRelativeTime(article.created_at)}</p>
-                  </div>
+
+                  {isAuthor && (
+                    <button 
+                      onClick={() => handleDelete(article.id)}
+                      className="p-3 bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 rounded-2xl transition-all shadow-sm"
+                      title="Delete Signal"
+                    >
+                      🗑
+                    </button>
+                  )}
                 </div>
 
                 <Link href={`/dashboard/article/${article.id}`} className="block group">
@@ -176,8 +228,17 @@ export default function Dashboard() {
                     <button onClick={() => handleReaction(article.id)} className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all ${hasLiked ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-slate-50 text-slate-400 hover:bg-blue-50'}`}>
                       🔥 {article.like_count} Agree
                     </button>
-                    <button onClick={() => setActiveArticle(article)} className="bg-slate-50 text-slate-400 hover:bg-blue-50 px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all">💬 Discuss</button>
+                    
+                    <button 
+                      onClick={() => handleShare(article)} 
+                      className="bg-slate-50 text-slate-400 hover:bg-blue-50 px-4 py-3 rounded-2xl transition-all"
+                      title="Share Signal"
+                    >
+                      ↗
+                    </button>
                   </div>
+                  
+                  <button onClick={() => setActiveArticle(article)} className="bg-slate-900 text-white hover:bg-blue-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase transition-all shadow-lg shadow-slate-200">💬 Discuss</button>
                 </div>
               </article>
             );

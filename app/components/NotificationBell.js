@@ -9,7 +9,27 @@ export default function NotificationBell({ user }) {
   const dropdownRef = useRef(null);
   const router = useRouter();
 
-  // Fetches both personal notifications and global ones (where user_id is null)
+  // Helper function for "Today" / "Yesterday" labels
+  const getRelativeTime = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    
+    // Reset hours to compare dates only
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const compareDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    if (compareDate.getTime() === today.getTime()) {
+      return "Today";
+    } else if (compareDate.getTime() === yesterday.getTime()) {
+      return "Yesterday";
+    } else {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+  };
+
   const fetchNotifications = async () => {
     const { data } = await supabase
       .from('notifications')
@@ -18,8 +38,6 @@ export default function NotificationBell({ user }) {
       .order('created_at', { ascending: false })
       .limit(20);
     
-    // Filter out your own global "new_article" notifications so you don't see a duplicate 
-    // of your own post alongside the "Success" notification.
     const myUsername = user.email?.split('@')[0];
     const filteredData = data?.filter(n => 
       !(n.type === 'new_article' && n.actor_usernames.includes(myUsername))
@@ -31,21 +49,18 @@ export default function NotificationBell({ user }) {
   useEffect(() => {
     fetchNotifications();
 
-    // Real-time subscription for new notifications
     const channel = supabase.channel(`notifs-combined`)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'notifications'
       }, (payload) => {
-        // Refresh if it's a global notification or intended for this specific user
         if (!payload.new.user_id || payload.new.user_id === user.id) {
           fetchNotifications();
         }
       })
       .subscribe();
 
-    // Click-away listener to close dropdown
     const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setOpen(false);
@@ -59,10 +74,8 @@ export default function NotificationBell({ user }) {
     };
   }, [user.id]);
 
-  // Marks a specific notification as read in the database
   const markAsRead = async (id) => {
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-    // Local state update for immediate feedback
     setNotifications(prev => 
       prev.map(n => n.id === id ? { ...n, is_read: true } : n)
     );
@@ -114,7 +127,6 @@ export default function NotificationBell({ user }) {
                   onClick={() => handleNotifClick(n)}
                   className={`p-4 border-b border-slate-50 flex gap-3 items-start cursor-pointer hover:bg-blue-50/30 transition-all active:scale-[0.98] relative ${!n.is_read ? 'bg-blue-50/20' : ''}`}
                 >
-                  {/* Unread status bar */}
                   {!n.is_read && (
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-blue-600 rounded-full" />
                   )}
@@ -135,21 +147,27 @@ export default function NotificationBell({ user }) {
                       {n.type === 'author_success' ? (
                         <>
                           <span className="font-black text-green-600">Success! </span>
-                          You have successfully published: 
+                          You published: 
                         </>
                       ) : (
                         <>
                           <span className="font-black text-blue-900">
                             @{n.actor_usernames?.[0] || 'Someone'}
                           </span>
-                          {n.type === 'new_article' ? ' posted a new discovery: ' : ' liked your discovery '}
+                          {n.type === 'new_article' ? ' posted: ' : ' liked your discovery '}
                         </>
                       )}
-                      <span className="font-bold text-slate-600 italic"> "{n.articles?.title || 'Deleted Article'}"</span>
+                      <span className="font-bold text-slate-600 italic"> "{n.articles?.title || 'Deleted'}"</span>
                     </p>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
-                      {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
+                    {/* UPDATED DATE/TIME DISPLAY */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[9px] text-blue-500 font-black uppercase tracking-tighter">
+                        {getRelativeTime(n.created_at)}
+                      </span>
+                      <span className="text-[9px] text-slate-300 font-bold">
+                        {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))

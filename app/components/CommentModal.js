@@ -2,6 +2,80 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
+// SUB-COMPONENT: This renders a single comment and its nested replies recursively
+const CommentItem = ({ comment, allComments, onReply, onDelete, currentUser }) => {
+  const isOwner = currentUser?.id === comment.user_id;
+  // Find all comments that have THIS comment's ID as their parent_id
+  const nestedReplies = allComments.filter(c => c.parent_id === comment.id);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-4 items-start group">
+        {/* Avatar */}
+        <div className="w-10 h-10 rounded-2xl overflow-hidden bg-white border border-slate-100 flex-shrink-0 shadow-sm">
+          {comment.profiles?.avatar_url ? (
+            <img src={comment.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-xs bg-slate-50 text-slate-300 font-black">
+              {comment.profiles?.username?.charAt(0).toUpperCase()}
+            </div>
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 space-y-1">
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">
+              @{comment.profiles?.username || 'anonymous'}
+            </p>
+            <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+            <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">
+              {new Date(comment.created_at).toLocaleDateString()}
+            </p>
+          </div>
+          
+          <div className="bg-white p-5 rounded-[1.5rem] rounded-tl-none border border-slate-100 shadow-sm group-hover:shadow-md transition-shadow">
+            <p className="text-sm text-slate-600 font-medium leading-relaxed">{comment.content}</p>
+          </div>
+
+          <div className="flex items-center gap-4 pt-1 px-1">
+            <button 
+              onClick={() => onReply(comment)} 
+              className="text-[9px] font-black text-blue-600 uppercase tracking-widest hover:text-indigo-600 transition"
+            >
+              Reply
+            </button>
+            {isOwner && (
+              <button 
+                onClick={() => onDelete(comment.id)} 
+                className="text-[9px] font-black text-slate-300 hover:text-red-500 uppercase tracking-widest transition"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* RECURSION: If this comment has replies, render another set of CommentItems inside it */}
+      {nestedReplies.length > 0 && (
+        <div className="ml-10 md:ml-14 border-l-2 border-slate-100 pl-4 space-y-6 mt-4">
+          {nestedReplies.map(reply => (
+            <CommentItem 
+              key={reply.id} 
+              comment={reply} 
+              allComments={allComments} 
+              onReply={onReply} 
+              onDelete={onDelete} 
+              currentUser={currentUser}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function CommentModal({ article, onClose, user }) {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
@@ -20,7 +94,6 @@ export default function CommentModal({ article, onClose, user }) {
 
   useEffect(() => {
     fetchComments();
-
     const channel = supabase
       .channel(`comments-${article?.id}`)
       .on('postgres_changes', { 
@@ -51,8 +124,8 @@ export default function CommentModal({ article, onClose, user }) {
       console.error("Comment error:", error.message);
     } else {
       setNewComment('');
-      setReplyTo(null); 
-      fetchComments(); 
+      setReplyTo(null);
+      fetchComments();
     }
     setSending(false);
   };
@@ -68,15 +141,16 @@ export default function CommentModal({ article, onClose, user }) {
     if (!error) fetchComments();
   };
 
+  // Only the comments without a parent_id are the top-level starting points
   const rootComments = comments.filter(c => !c.parent_id);
-  const getReplies = (parentId) => comments.filter(c => c.parent_id === parentId);
 
   if (!article) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[100] flex items-end md:items-center justify-center p-0 md:p-6 transition-all">
-      <div className="bg-white w-full max-w-xl rounded-t-[3rem] md:rounded-[3rem] shadow-[0_30px_100px_rgba(0,0,0,0.2)] overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-500 max-h-[92vh] flex flex-col border border-white/20">
+      <div className="bg-white w-full max-w-2xl rounded-t-[3rem] md:rounded-[3rem] shadow-[0_30px_100px_rgba(0,0,0,0.2)] overflow-hidden animate-in slide-in-from-bottom md:zoom-in-95 duration-500 max-h-[92vh] flex flex-col border border-white/20">
         
+        {/* Header */}
         <div className="px-8 py-6 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10">
           <div>
             <h3 className="text-lg font-black text-slate-900 tracking-tighter">Discussion Thread</h3>
@@ -84,102 +158,33 @@ export default function CommentModal({ article, onClose, user }) {
               Regarding: {article.title || 'Loading...'}
             </p>
           </div>
-          <button 
-            onClick={onClose} 
-            className="w-12 h-12 flex items-center justify-center hover:bg-slate-50 rounded-2xl text-slate-300 hover:text-slate-900 transition-all active:scale-90"
-          >
+          <button onClick={onClose} className="w-12 h-12 flex items-center justify-center hover:bg-slate-50 rounded-2xl text-slate-300 hover:text-slate-900 transition-all active:scale-90">
             <span className="text-xl">✕</span>
           </button>
         </div>
         
+        {/* Comments List */}
         <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-8 bg-slate-50/30">
-          {rootComments.length === 0 && !sending && (
+          {rootComments.length === 0 && !sending ? (
             <div className="text-center py-24">
               <div className="w-16 h-16 bg-white rounded-[2rem] shadow-sm border border-slate-100 flex items-center justify-center mx-auto mb-4 text-2xl">💬</div>
               <p className="text-slate-300 font-black uppercase text-[10px] tracking-[0.3em]">No signals detected</p>
             </div>
+          ) : (
+            rootComments.map(comment => (
+              <CommentItem 
+                key={comment.id} 
+                comment={comment} 
+                allComments={comments} 
+                onReply={setReplyTo} 
+                onDelete={handleDeleteComment} 
+                currentUser={user}
+              />
+            ))
           )}
-          
-          {rootComments.map((comment) => {
-            const isOwner = user?.id === comment.user_id;
-            const replies = getReplies(comment.id);
-
-            return (
-              <div key={comment.id} className="space-y-4">
-                <div className="flex gap-4 items-start group">
-                  <div className="w-10 h-10 rounded-2xl overflow-hidden bg-white border border-slate-100 flex-shrink-0 shadow-sm">
-                    {comment.profiles?.avatar_url ? (
-                      <img src={comment.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs bg-slate-50 text-slate-300 font-black">
-                        {comment.profiles?.username?.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-[11px] font-black text-slate-900 uppercase tracking-tight">
-                        @{comment.profiles?.username || 'anonymous'}
-                      </p>
-                      <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
-                      <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">
-                        {new Date(comment.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    
-                    <div className="bg-white p-5 rounded-[1.5rem] rounded-tl-none border border-slate-100 shadow-sm group-hover:shadow-md transition-shadow">
-                      <p className="text-sm text-slate-600 font-medium leading-relaxed">{comment.content}</p>
-                    </div>
-
-                    <div className="flex items-center gap-4 pt-1 px-1">
-                      <button 
-                        onClick={() => setReplyTo(comment)} 
-                        className="text-[9px] font-black text-blue-600 uppercase tracking-widest hover:text-indigo-600 transition"
-                      >
-                        Reply
-                      </button>
-                      {isOwner && (
-                        <button onClick={() => handleDeleteComment(comment.id)} className="text-[9px] font-black text-slate-300 hover:text-red-500 uppercase tracking-widest transition">
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {replies.map(reply => {
-                  const isReplyOwner = user?.id === reply.user_id;
-                  return (
-                    <div key={reply.id} className="ml-14 flex gap-3 items-start border-l-2 border-slate-100 pl-4 py-1">
-                      <div className="w-7 h-7 rounded-xl overflow-hidden bg-white border border-slate-100 flex-shrink-0 shadow-sm">
-                        {reply.profiles?.avatar_url ? (
-                          <img src={reply.profiles.avatar_url} className="w-full h-full object-cover" alt="" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[8px] bg-slate-50 text-slate-300">👤</div>
-                        )}
-                      </div>
-                      <div className="flex-1 bg-white/50 p-4 rounded-2xl rounded-tl-none border border-slate-100">
-                        <div className="flex justify-between items-center mb-1">
-                          <p className="text-[10px] font-black text-slate-700 uppercase">
-                            @{reply.profiles?.username || 'anonymous'}
-                          </p>
-                          {isReplyOwner && (
-                            <button onClick={() => handleDeleteComment(reply.id)} className="text-slate-200 hover:text-red-500 transition-colors">
-                              <span className="text-[10px]">✕</span>
-                            </button>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-600 font-medium">{reply.content}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
         </div>
 
+        {/* Input Field */}
         <div className="p-6 md:p-8 border-t border-slate-50 bg-white pb-12 md:pb-8">
           {replyTo && (
             <div className="mb-4 flex justify-between items-center bg-slate-900 px-5 py-2.5 rounded-2xl animate-in fade-in slide-in-from-bottom-2">
@@ -199,13 +204,9 @@ export default function CommentModal({ article, onClose, user }) {
             <button 
               onClick={postComment} 
               disabled={sending || !newComment.trim()} 
-              className="bg-blue-600 text-white w-12 h-12 rounded-full font-black text-[10px] uppercase transition-all active:scale-90 shadow-lg shadow-blue-200 flex items-center justify-center disabled:bg-slate-200 disabled:shadow-none"
+              className="bg-blue-600 text-white w-12 h-12 rounded-full font-black text-[10px] uppercase transition-all active:scale-90 shadow-lg shadow-blue-200 flex items-center justify-center disabled:bg-slate-200"
             >
-              {sending ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                <span className="text-lg">↑</span>
-              )}
+              {sending ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span className="text-lg">↑</span>}
             </button>
           </div>
         </div>

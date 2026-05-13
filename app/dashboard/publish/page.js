@@ -11,7 +11,6 @@ export default function NewArticle() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // Handle file selection and create a temporary preview URL
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -20,7 +19,6 @@ export default function NewArticle() {
     }
   };
 
-  // Clean up the preview URL to avoid memory leaks
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -34,31 +32,31 @@ export default function NewArticle() {
     setLoading(true);
     
     try {
-      // 1. Authenticate the user
+      // 1. Get the current session user
       const { data: { user }, error: authError } = await supabase.auth.getUser();
 
       if (authError || !user) {
-        alert("You must be logged in to publish!");
+        alert("Session expired. Please log in again.");
         router.push('/auth');
         return;
       }
 
       let publicUrl = null;
 
-      // 2. Handle Image Upload to Storage
+      // 2. Handle Image Upload (matching your schema image_url column)
       if (imageFile) {
         const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${Date.now()}.${fileExt}`;
-        const filePath = `${user.id}/${fileName}`; 
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const filePath = `articles/${fileName}`; 
         
         const { error: uploadError } = await supabase.storage
-          .from('article-images')
+          .from('article-images') // Ensure this bucket exists in your Supabase Dashboard
           .upload(filePath, imageFile, {
             contentType: imageFile.type,
             upsert: true
           });
 
-        if (uploadError) throw new Error("Image upload failed: " + uploadError.message);
+        if (uploadError) throw new Error("Storage Upload Failed: " + uploadError.message);
 
         const { data: urlData } = supabase.storage
           .from('article-images')
@@ -67,14 +65,14 @@ export default function NewArticle() {
         publicUrl = urlData.publicUrl;
       }
 
-      // 3. Insert Article into 'articles' table
-      // FIXED: Using 'author_id' instead of 'user_id' to match your DB schema dot
+      // 3. Insert Article
+      // Matches author_id constraint and image_url column
       const { data: newArticle, error: articleError } = await supabase
         .from('articles')
         .insert([{ 
           title: title.trim(), 
           content: content.trim(), 
-          author_id: user.id, // Target column from your schema
+          author_id: user.id, 
           image_url: publicUrl 
         }])
         .select()
@@ -83,17 +81,21 @@ export default function NewArticle() {
       if (articleError) throw articleError;
 
       // 4. Trigger Notifications
-      const { error: notifError } = await supabase.from('notifications').insert([
-        {
-          user_id: user.id,
-          actor_usernames: ['You'],
-          article_id: newArticle.id,
-          type: 'author_success'
-        }
-      ]);
+      // Logic: Notify the user themselves that their post is live
+      const { error: notifError } = await supabase
+        .from('notifications')
+        .insert([
+          {
+            user_id: user.id, // Recipient
+            actor_usernames: user.user_metadata?.username || 'Anonymous', // Use real username
+            article_id: newArticle.id,
+            type: 'author_success'
+          }
+        ]);
 
       if (notifError) console.error("Notification Sync Error:", notifError);
 
+      // 5. Cleanup and Redirect
       router.push('/dashboard');
       router.refresh(); 
 
@@ -106,25 +108,27 @@ export default function NewArticle() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-10">
-      <div className="max-w-2xl mx-auto bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-200">
-        <div className="flex items-center gap-4 mb-8">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-10 font-sans">
+      <div className="max-w-2xl mx-auto bg-white p-8 md:p-12 rounded-[3rem] shadow-xl shadow-slate-200/50 border border-slate-50">
+        <div className="flex items-center gap-6 mb-10">
           <button 
             onClick={() => router.back()} 
-            className="text-slate-400 hover:text-blue-600 transition p-2 hover:bg-blue-50 rounded-full font-black text-xs uppercase"
+            className="w-10 h-10 flex items-center justify-center bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all rounded-2xl font-black text-sm"
           >
-            ← Back
+            ←
           </button>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight">New Discovery</h1>
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Broadcast</h1>
+            <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] uppercase">New Discovery Protocol</p>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* TITLE INPUT */}
+        <form onSubmit={handleSubmit} className="space-y-8">
           <div>
-            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Article Title</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Headline</label>
             <input 
-              className="w-full p-4 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-500/5 outline-none transition bg-slate-50 font-bold text-slate-900"
-              placeholder="Give it a catchy name..."
+              className="w-full p-5 bg-slate-50 border-none rounded-2xl focus:ring-4 focus:ring-blue-500/5 outline-none transition font-bold text-slate-900 placeholder:text-slate-300"
+              placeholder="The future of Neural Networks..."
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
@@ -132,40 +136,39 @@ export default function NewArticle() {
             />
           </div>
 
-          {/* IMAGE UPLOAD & PREVIEW */}
           <div>
-            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Cover Image</label>
-            
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Visual Data (Optional)</label>
             {!previewUrl ? (
-              <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-slate-200 rounded-3xl cursor-pointer hover:bg-slate-50 transition-all group">
+              <label className="flex flex-col items-center justify-center w-full h-56 border-2 border-dashed border-slate-100 rounded-[2.5rem] cursor-pointer hover:bg-slate-50 hover:border-blue-200 transition-all group">
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">📸</span>
-                  <p className="text-[10px] font-black text-slate-400 uppercase">Select a photo</p>
+                  <div className="w-12 h-12 bg-white shadow-md rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                    <span className="text-xl">🖼️</span>
+                  </div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Click to upload imagery</p>
                 </div>
                 <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={loading} />
               </label>
             ) : (
-              <div className="relative group rounded-3xl overflow-hidden border border-slate-200 shadow-inner">
-                <img src={previewUrl} alt="Preview" className="w-full h-64 object-cover" />
-                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <div className="relative group rounded-[2.5rem] overflow-hidden border-4 border-white shadow-lg">
+                <img src={previewUrl} alt="Preview" className="w-full h-72 object-cover" />
+                <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center backdrop-blur-sm">
                   <button 
                     type="button"
                     onClick={() => { setImageFile(null); setPreviewUrl(null); }}
-                    className="bg-white px-6 py-2 rounded-xl text-[10px] font-black text-red-500 shadow-xl hover:scale-105 transition-all uppercase"
+                    className="bg-white px-8 py-3 rounded-2xl text-[10px] font-black text-red-500 hover:bg-red-500 hover:text-white transition-all uppercase tracking-widest"
                   >
-                    Change Photo ×
+                    Remove Selection
                   </button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* CONTENT TEXTAREA */}
           <div>
-            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">Content</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2">Discovery Brief</label>
             <textarea 
-              className="w-full p-4 border border-slate-100 rounded-3xl h-64 focus:ring-4 focus:ring-blue-500/5 outline-none transition resize-none bg-slate-50 font-medium leading-relaxed text-slate-800"
-              placeholder="What did you discover today?"
+              className="w-full p-6 bg-slate-50 border-none rounded-[2rem] h-64 focus:ring-4 focus:ring-blue-500/5 outline-none transition resize-none font-medium leading-relaxed text-slate-700 placeholder:text-slate-300"
+              placeholder="Synthesize your findings here..."
               value={content}
               onChange={(e) => setContent(e.target.value)}
               required
@@ -176,11 +179,11 @@ export default function NewArticle() {
           <button 
             type="submit"
             disabled={loading}
-            className={`w-full py-5 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] text-white transition-all shadow-lg active:scale-95 ${
-              loading ? 'bg-slate-300 animate-pulse cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-100 hover:shadow-blue-200'
+            className={`w-full py-6 rounded-[1.5rem] font-black text-[11px] uppercase tracking-[0.3em] text-white transition-all shadow-xl active:scale-95 ${
+              loading ? 'bg-slate-200 animate-pulse cursor-not-allowed shadow-none' : 'bg-slate-900 hover:bg-blue-600 shadow-blue-100'
             }`}
           >
-            {loading ? "Transmitting..." : "Broadcast Discovery"}
+            {loading ? "Transmitting..." : "Initialize Broadcast"}
           </button>
         </form>
       </div>

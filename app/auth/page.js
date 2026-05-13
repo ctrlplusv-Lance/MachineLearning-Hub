@@ -4,9 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 
 export default function AuthPage() {
-  // New state to toggle between Login and Sign Up views
   const [isSignUp, setIsSignUp] = useState(false);
-  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -19,49 +17,76 @@ export default function AuthPage() {
     setLoading(true);
     setMessage('');
 
-    if (isSignUp) {
-      // --- SIGN UP LOGIC ---
-      if (!username) {
-        setMessage('⚠️ Please choose a username.');
-        setLoading(false);
-        return;
-      }
-
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${baseUrl}/auth/callback`,
-          data: { username: username }
+    try {
+      if (isSignUp) {
+        // --- CREATE ACCOUNT LOGIC ---
+        if (!username) {
+          setMessage('⚠️ Please choose a username.');
+          setLoading(false);
+          return;
         }
-      });
 
-      if (error) {
-        setMessage(`Error: ${error.message}`);
-      } else if (data.user) {
-        // Create Profile row
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert([{ id: data.user.id, username, avatar_url: `https://ui-avatars.com/api/?name=${username}` }]);
+        const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
+        
+        // 1. Register with Supabase Auth
+        const { data, error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${baseUrl}/auth/callback`,
+            data: { username: username }
+          }
+        });
 
-        if (profileError) setMessage('Account created, but profile setup failed.');
-        else setMessage('✅ Success! Check your email to verify your account.');
-      }
-    } else {
-      // --- LOGIN LOGIC ---
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError) throw authError;
 
-      if (error) {
-        setMessage(error.message.includes("Email not confirmed") 
-          ? "⚠️ Please confirm your email first." 
-          : `Error: ${error.message}`);
+        if (data?.user) {
+          // 2. Create or Update the Public Profile
+          // Using .upsert() fixes the "duplicate key" error
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert([
+              { 
+                id: data.user.id, 
+                username: username, 
+                avatar_url: `https://ui-avatars.com/api/?name=${username}&background=random`,
+                bio: "" // Satisfies schema constraints
+              }
+            ], { onConflict: 'id' });
+
+          if (profileError) {
+            console.error("Database Error:", profileError);
+            setMessage('⚠️ Account created, but profile setup failed. Please contact support.');
+          } else {
+            setMessage('✅ Success! Please check your email to verify your account.');
+            setEmail('');
+            setPassword('');
+            setUsername('');
+          }
+        }
       } else {
-        setMessage('Success! Redirecting...');
-        router.push('/dashboard');
+        // --- SIGN IN LOGIC ---
+        const { data, error: loginError } = await supabase.auth.signInWithPassword({ 
+          email, 
+          password 
+        });
+
+        if (loginError) {
+          if (loginError.message.includes("Email not confirmed")) {
+            setMessage("⚠️ Please confirm your email first.");
+          } else {
+            throw loginError;
+          }
+        } else if (data?.user) {
+          setMessage('Success! Entering Dashboard...');
+          router.push('/dashboard');
+        }
       }
+    } catch (err) {
+      setMessage(`Error: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -81,7 +106,6 @@ export default function AuthPage() {
         </div>
         
         <form onSubmit={handleAuth} className="space-y-4">
-          {/* Show Username ONLY during Sign Up */}
           {isSignUp && (
             <div className="animate-in fade-in slide-in-from-top-2 duration-300">
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Username</label>
@@ -139,6 +163,7 @@ export default function AuthPage() {
 
         <div className="mt-8 pt-6 border-t border-slate-50 text-center">
           <button 
+            type="button"
             onClick={() => { setIsSignUp(!isSignUp); setMessage(''); }}
             className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-blue-600 transition-colors"
           >

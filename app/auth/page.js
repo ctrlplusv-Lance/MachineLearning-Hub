@@ -10,6 +10,10 @@ export default function AuthPage() {
   const [username, setUsername] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // 1. STATE FOR PASSWORD VISIBILITY
+  const [showPassword, setShowPassword] = useState(false);
+  
   const router = useRouter();
 
   const handleAuth = async (e) => {
@@ -17,9 +21,15 @@ export default function AuthPage() {
     setLoading(true);
     setMessage('');
 
+    // 2. VALIDATE PASSWORD LENGTH (8 CHARACTERS MINIMUM)
+    if (password.length < 8) {
+      setMessage('⚠️ Password must be at least 8 characters long.');
+      setLoading(false);
+      return;
+    }
+
     try {
       if (isSignUp) {
-        // --- CREATE ACCOUNT LOGIC ---
         if (!username) {
           setMessage('⚠️ Please choose a username.');
           setLoading(false);
@@ -28,7 +38,6 @@ export default function AuthPage() {
 
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
         
-        // 1. Register with Supabase Auth
         const { data, error: authError } = await supabase.auth.signUp({
           email,
           password,
@@ -41,8 +50,7 @@ export default function AuthPage() {
         if (authError) throw authError;
 
         if (data?.user) {
-          // 2. Create or Update the Public Profile
-          // Using .upsert() fixes the "duplicate key" error
+          // Using .upsert() as previously fixed to avoid duplicate key errors
           const { error: profileError } = await supabase
             .from('profiles')
             .upsert([
@@ -50,13 +58,13 @@ export default function AuthPage() {
                 id: data.user.id, 
                 username: username, 
                 avatar_url: `https://ui-avatars.com/api/?name=${username}&background=random`,
-                bio: "" // Satisfies schema constraints
+                bio: "" // Matches schema
               }
             ], { onConflict: 'id' });
 
           if (profileError) {
             console.error("Database Error:", profileError);
-            setMessage('⚠️ Account created, but profile setup failed. Please contact support.');
+            setMessage('⚠️ Account created, but profile setup failed.');
           } else {
             setMessage('✅ Success! Please check your email to verify your account.');
             setEmail('');
@@ -65,7 +73,6 @@ export default function AuthPage() {
           }
         }
       } else {
-        // --- SIGN IN LOGIC ---
         const { data, error: loginError } = await supabase.auth.signInWithPassword({ 
           email, 
           password 
@@ -132,16 +139,26 @@ export default function AuthPage() {
             />
           </div>
 
-          <div>
+          {/* PASSWORD FIELD WITH TOGGLE */}
+          <div className="relative">
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Password</label>
             <input
-              type="password"
-              placeholder="••••••••"
-              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/5 outline-none transition-all text-slate-700 font-medium"
+              // Toggle between "password" and "text"
+              type={showPassword ? "text" : "password"} 
+              placeholder="Min. 8 characters"
+              className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-500/5 outline-none transition-all text-slate-700 font-medium pr-16"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+            {/* TOGGLE BUTTON */}
+            <button 
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-4 bottom-[14px] text-[10px] font-black text-blue-600 uppercase tracking-tighter hover:text-blue-700 transition-colors bg-white px-2 py-1 rounded-lg"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
           </div>
           
           <button 
@@ -153,7 +170,7 @@ export default function AuthPage() {
           </button>
 
           {message && (
-            <div className={`mt-4 p-4 text-center text-[10px] font-black uppercase rounded-2xl ${
+            <div className={`mt-4 p-4 text-center text-[10px] font-black uppercase rounded-2xl animate-in fade-in zoom-in duration-200 ${
               message.includes('Error') || message.includes('⚠️') ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'
             }`}>
               {message}

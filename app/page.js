@@ -32,7 +32,7 @@ export default function LandingPage() {
             The Future of Social Art
           </span>
 
-          {/* Main Title - Updated to ArtHub */}
+          {/* Main Title */}
           <h1 className="text-6xl md:text-8xl font-black text-slate-900 mb-8 tracking-tighter leading-[0.9]">
             The Canvas for <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-500">
@@ -45,16 +45,13 @@ export default function LandingPage() {
             Experience the next generation of artistic discovery. Connect, share, and explore high-fidelity visual concepts in the definitive ArtHub environment.
           </p>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          {/* CTA Button - NOW CENTERED AND ALONE */}
+          <div className="flex justify-center">
             <Link href="/auth">
-              <button className="bg-slate-900 hover:bg-blue-600 text-white font-black py-5 px-12 rounded-[2rem] shadow-2xl shadow-blue-900/10 transition-all transform hover:scale-105 active:scale-95 text-[12px] uppercase tracking-widest">
+              <button className="bg-slate-900 hover:bg-blue-600 text-white font-black py-6 px-16 rounded-[2.5rem] shadow-2xl shadow-blue-900/10 transition-all transform hover:scale-105 active:scale-95 text-[14px] uppercase tracking-widest">
                 Start Creating Now
               </button>
             </Link>
-            <button className="bg-white border-2 border-slate-100 text-slate-500 font-black py-5 px-12 rounded-[2rem] transition-all hover:border-blue-200 hover:text-blue-600 text-[12px] uppercase tracking-widest">
-              Explore Gallery
-            </button>
           </div>
         </div>
       </main>
